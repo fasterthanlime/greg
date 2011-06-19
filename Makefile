@@ -1,6 +1,7 @@
 CFLAGS = -g -Wall $(OFLAGS) $(XFLAGS)
 OFLAGS = -O3 -DNDEBUG
 #OFLAGS = -pg
+#TOOL=valgrind -q
 
 OBJS = tree.o compile.o
 
@@ -29,7 +30,7 @@ grammar : .FORCE
 	./greg -o greg.c greg.g
 
 clean : .FORCE
-	rm -rf *~ *.o *.greg.[cd] greg samples/*.o samples/calc samples/calc.dSYM
+	rm -rf *~ *.o *.greg.[cd] greg samples/*.o samples/calc samples/*.dSYM testing1.c testing2.c *.dSYM selftest/
 
 spotless : clean .FORCE
 	rm -f greg
@@ -42,5 +43,15 @@ samples/calc: samples/calc.c
 
 test: samples/calc
 	echo '21 * 2 + 0' | ./samples/calc | grep 42
+
+run: greg.g greg
+	mkdir -p selftest
+	./greg -o testing1.c greg.g
+	$(CC) $(CFLAGS) -o selftest/testing1 testing1.c $(OBJS)
+	$(TOOL) ./selftest/testing1 -o testing2.c greg.g
+	$(CC) $(CFLAGS) -o selftest/testing2 testing2.c $(OBJS)
+	$(TOOL) ./selftest/testing2 -o selftest/calc.c ./samples/calc.leg
+	$(CC) $(CFLAGS) -o selftest/calc selftest/calc.c
+	$(TOOL) echo '21 * 2 + 0' | ./selftest/calc | grep 42
 
 .FORCE :

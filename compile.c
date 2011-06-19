@@ -167,11 +167,11 @@ static void Node_compile_c_ko(Node *node, int ko)
       break;
 
     case Action:
-      fprintf(output, "  yyDo(G, yy%s, G->begin, G->end);", node->action.name);
+      fprintf(output, "  yyDo(G, yy%s, yytextpos?yytextpos:G->begin, G->end);", node->action.name);
       break;
 
     case Predicate:
-      fprintf(output, "  yyText(G, G->begin, G->end);  if (!(%s)) goto l%d;", node->action.text, ko);
+      fprintf(output, "  yyText(G, yytextpos?yytextpos:G->begin, G->end);  if (!(%s)) goto l%d;", node->action.text, ko);
       break;
 
     case Alternate:
@@ -323,6 +323,7 @@ static void Rule_compile_c2(Node *node)
       safe= ((Query == node->rule.expression->type) || (Star == node->rule.expression->type));
 
       fprintf(output, "\nYY_RULE(int) yy_%s(GREG *G)\n{", node->rule.name);
+      fprintf(output, "  int yytextpos = 0; yytextpos=yytextpos;\n");
       if (!safe) save(0);
       if (node->rule.variables)
         fprintf(output, "  yyDo(G, yyPush, %d, 0);", countVariables(node->rule.variables));
@@ -390,7 +391,7 @@ static char *preamble= "\
   }\n\
 #endif\n\
 #ifndef YY_BEGIN\n\
-#define YY_BEGIN        ( G->begin= G->pos, 1)\n\
+#define YY_BEGIN        ( yytextpos= G->begin= G->pos, 1)\n\
 #endif\n\
 #ifndef YY_END\n\
 #define YY_END          ( G->end= G->pos, 1)\n\
