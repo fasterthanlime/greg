@@ -163,6 +163,13 @@ Node *makePredicate(char *text)
   return node;
 }
 
+Node *makeNoBack(char *msg)
+{
+    Node *node= newNode(NoBack);
+    node->noback.msg= strdup(msg);
+    return node;
+}
+
 Node *makeAlternate(Node *e)
 {
   if (Alternate != e->type)

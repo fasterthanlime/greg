@@ -22,7 +22,7 @@
 #define GREG_MINOR      4
 #define GREG_LEVEL      3
 
-enum { Unknown= 0, Rule, Variable, Name, Dot, Character, String, Class, Action, Predicate, Alternate, Sequence, PeekFor, PeekNot, Query, Star, Plus };
+enum { Unknown= 0, Rule, Variable, Name, Dot, Character, String, Class, Action, Predicate, Alternate, Sequence, PeekFor, PeekNot, Query, Star, Plus, NoBack };
 
 enum {
   RuleUsed      = 1<<0,
@@ -48,6 +48,7 @@ struct Query     { int type;  Node *next;   char *errblock;  Node *element;     
 struct Star      { int type;  Node *next;   char *errblock;  Node *element;                                                              };
 struct Plus      { int type;  Node *next;   char *errblock;  Node *element;                                                              };
 struct Any       { int type;  Node *next;   char *errblock;                                                                              };
+struct NoBack    { int type;  Node *next;   char *errblock;  const char* msg;                                                            };
 
 union Node
 {
@@ -69,6 +70,7 @@ union Node
   struct Star           star;
   struct Plus           plus;
   struct Any            any;
+  struct NoBack         noback;
 };
 
 extern Node *actions;
@@ -104,6 +106,7 @@ extern Node *makePlus(Node *e);
 extern Node *push(Node *node);
 extern Node *top(void);
 extern Node *pop(void);
+extern Node *makeNoBack(char *msg);
 
 extern void  Rule_compile_c_header(void);
 extern void  Rule_compile_c(Node *node);

@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 struct _GREG;
-#define YYRULECOUNT 37
+#define YYRULECOUNT 38
 
 # include "greg.h"
 
@@ -26,25 +26,25 @@ struct _GREG;
 
   int   verboseFlag= 0;
 
-  static int	 lineNumber= 0;
-  static char	*fileName= 0;
-  static char	*trailer= 0;
-  static Header	*headers= 0;
+  static int     lineNumber= 0;
+  static char   *fileName= 0;
+  static char   *trailer= 0;
+  static Header *headers= 0;
 
   void makeHeader(char *text);
   void makeTrailer(char *text);
 
-  void yyerror(struct _GREG *, char *message);
+  void reporterror(struct _GREG *);
 
-# define YY_INPUT(buf, result, max, D)		\
-  {						\
-    int c= getc(input);				\
-    if ('\n' == c || '\r' == c) ++lineNumber;	\
-    result= (EOF == c) ? 0 : (*(buf)= c, 1);	\
+# define YY_INPUT(buf, result, max, D)      \
+  {                     \
+    int c= getc(input);             \
+    if ('\n' == c || '\r' == c) ++lineNumber;   \
+    result= (EOF == c) ? 0 : (*(buf)= c, 1);    \
   }
 
-# define YY_LOCAL(T)	static T
-# define YY_RULE(T)	static T
+# define YY_LOCAL(T)    static T
+# define YY_RULE(T) static T
 
 #ifndef YY_ALLOC
 #define YY_ALLOC(N, D) malloc(N)
@@ -82,10 +82,10 @@ struct _GREG;
   }
 #endif
 #ifndef YY_BEGIN
-#define YY_BEGIN        ( G->begin= G->pos, 1)
+#define YY_BEGIN        ( textpos= G->state.textpos= G->state.pos, 1)
 #endif
 #ifndef YY_END
-#define YY_END          ( G->end= G->pos, 1)
+#define YY_END          ( G->end= G->state.pos, 1)
 #endif
 #ifdef YY_DEBUG
 # define yyprintf(args) fprintf args
@@ -114,23 +114,35 @@ struct _GREG;
 #define yydata G->data
 #define yy G->ss
 
+typedef struct _yystate {
+    int textpos;
+    int line;
+    int pos;
+    int thunkpos;
+} yystate;
+
+typedef struct _yyerror {
+    const char* msg;
+    int line;
+    int pos;
+} yyerror;
+
 struct _yythunk; // forward declaration
 typedef void (*yyaction)(struct _GREG *G, char *yytext, int yyleng, struct _yythunk *thunkpos, YY_XTYPE YY_XVAR);
 typedef struct _yythunk { int begin, end;  yyaction  action;  struct _yythunk *next; } yythunk;
 
 typedef struct _GREG {
+  yystate state;
+  yyerror error;
   char *buf;
   int buflen;
   int   offset;
-  int   pos;
   int   limit;
   char *text;
   int   textlen;
-  int   begin;
   int   end;
   yythunk *thunks;
   int   thunkslen;
-  int thunkpos;
   YYSTYPE ss;
   YYSTYPE *val;
   YYSTYPE *vals;
@@ -138,15 +150,22 @@ typedef struct _GREG {
   YY_XTYPE data;
 } GREG;
 
+YY_LOCAL(void) yyseterror(yyerror *error, yystate *state, const char* msg) {
+    if (error->msg) return;
+    error->msg = msg;
+    error->line = state->line;
+    error->pos = state->pos;
+}
+
 YY_LOCAL(int) yyrefill(GREG *G)
 {
   int yyn;
-  while (G->buflen - G->pos < 512)
+  while (G->buflen - G->state.pos < 512)
     {
       G->buflen *= 2;
       G->buf= (char*)YY_REALLOC(G->buf, G->buflen, G->data);
     }
-  YY_INPUT((G->buf + G->pos), yyn, (G->buflen - G->pos), G->data);
+  YY_INPUT((G->buf + G->state.pos), yyn, (G->buflen - G->state.pos), G->data);
   if (!yyn) return 0;
   G->limit += yyn;
   return 1;
@@ -154,37 +173,40 @@ YY_LOCAL(int) yyrefill(GREG *G)
 
 YY_LOCAL(int) yymatchDot(GREG *G)
 {
-  if (G->pos >= G->limit && !yyrefill(G)) return 0;
-  ++G->pos;
+  if (G->state.pos >= G->limit && !yyrefill(G)) return 0;
+  if (G->buf[G->state.pos] == '\n') G->state.line++;
+  G->state.pos++;
   return 1;
 }
 
 YY_LOCAL(int) yymatchChar(GREG *G, int c)
 {
-  if (G->pos >= G->limit && !yyrefill(G)) return 0;
-  if ((unsigned char)G->buf[G->pos] == c)
+  if (G->state.pos >= G->limit && !yyrefill(G)) return 0;
+  if ((unsigned char)G->buf[G->state.pos] == c)
     {
-      ++G->pos;
-      yyprintf((stderr, "  ok   yymatchChar(%c) @ %s\n", c, G->buf+G->pos));
+      if (G->buf[G->state.pos] == '\n') G->state.line++;
+      G->state.pos++;
+      yyprintf((stderr, "  ok   yymatchChar(%c) @ %s\n", c, G->buf+G->state.pos));
       return 1;
     }
-  yyprintf((stderr, "  fail yymatchChar(%c) @ %s\n", c, G->buf+G->pos));
+  yyprintf((stderr, "  fail yymatchChar(%c) @ %s\n", c, G->buf+G->state.pos));
   return 0;
 }
 
 YY_LOCAL(int) yymatchString(GREG *G, const char *s)
 {
-  int yysav= G->pos;
+  yystate state = G->state;
   while (*s)
     {
-      if (G->pos >= G->limit && !yyrefill(G)) return 0;
-      if (G->buf[G->pos] != *s)
+      if (G->state.pos >= G->limit && !yyrefill(G)) return 0;
+      if (G->buf[G->state.pos] != *s)
         {
-          G->pos= yysav;
+          G->state = state;
           return 0;
         }
-      ++s;
-      ++G->pos;
+      if (G->buf[G->state.pos] == '\n') G->state.line++;
+      s++;
+      G->state.pos++;
     }
   return 1;
 }
@@ -192,29 +214,30 @@ YY_LOCAL(int) yymatchString(GREG *G, const char *s)
 YY_LOCAL(int) yymatchClass(GREG *G, unsigned char *bits)
 {
   int c;
-  if (G->pos >= G->limit && !yyrefill(G)) return 0;
-  c= (unsigned char)G->buf[G->pos];
+  if (G->state.pos >= G->limit && !yyrefill(G)) return 0;
+  c= (unsigned char)G->buf[G->state.pos];
   if (bits[c >> 3] & (1 << (c & 7)))
     {
-      ++G->pos;
-      yyprintf((stderr, "  ok   yymatchClass @ %s\n", G->buf+G->pos));
+      if (G->buf[G->state.pos] == '\n') G->state.line++;
+      G->state.pos++;
+      yyprintf((stderr, "  ok   yymatchClass @ %s\n", G->buf+G->state.pos));
       return 1;
     }
-  yyprintf((stderr, "  fail yymatchClass @ %s\n", G->buf+G->pos));
+  yyprintf((stderr, "  fail yymatchClass @ %s\n", G->buf+G->state.pos));
   return 0;
 }
 
 YY_LOCAL(void) yyDo(GREG *G, yyaction action, int begin, int end)
 {
-  while (G->thunkpos >= G->thunkslen)
+  while (G->state.thunkpos >= G->thunkslen)
     {
       G->thunkslen *= 2;
       G->thunks= (yythunk*)YY_REALLOC(G->thunks, sizeof(yythunk) * G->thunkslen, G->data);
     }
-  G->thunks[G->thunkpos].begin=  begin;
-  G->thunks[G->thunkpos].end=    end;
-  G->thunks[G->thunkpos].action= action;
-  ++G->thunkpos;
+  G->thunks[G->state.thunkpos].begin=  begin;
+  G->thunks[G->state.thunkpos].end=    end;
+  G->thunks[G->state.thunkpos].action= action;
+  ++G->state.thunkpos;
 }
 
 YY_LOCAL(int) yyText(GREG *G, int begin, int end)
@@ -238,26 +261,26 @@ YY_LOCAL(int) yyText(GREG *G, int begin, int end)
 YY_LOCAL(void) yyDone(GREG *G)
 {
   int pos;
-  for (pos= 0; pos < G->thunkpos; ++pos)
+  for (pos= 0; pos < G->state.thunkpos; ++pos)
     {
       yythunk *thunk= &G->thunks[pos];
       int yyleng= thunk->end ? yyText(G, thunk->begin, thunk->end) : thunk->begin;
       yyprintf((stderr, "DO [%d] %p %s\n", pos, thunk->action, G->text));
       thunk->action(G, G->text, yyleng, thunk, G->data);
     }
-  G->thunkpos= 0;
+  G->state.thunkpos= 0;
 }
 
 YY_LOCAL(void) yyCommit(GREG *G)
 {
-  if ((G->limit -= G->pos))
+  if ((G->limit -= G->state.pos))
     {
-      memmove(G->buf, G->buf + G->pos, G->limit);
+      memmove(G->buf, G->buf + G->state.pos, G->limit);
     }
-  G->offset += G->pos;
-  G->begin -= G->pos;
-  G->end -= G->pos;
-  G->pos= G->thunkpos= 0;
+  G->offset += G->state.pos;
+  G->state.textpos -= G->state.pos;
+  G->end -= G->state.pos;
+  G->state.pos= G->state.thunkpos= 0;
 }
 
 YY_LOCAL(int) yyAccept(GREG *G, int tp0)
@@ -283,13 +306,14 @@ YY_LOCAL(void) yySet(GREG *G, char *text, int count, yythunk *thunk, YY_XTYPE YY
 
 #define YYACCEPT        yyAccept(G, yythunkpos0)
 
-YY_RULE(int) yy_end_of_line(GREG *G); /* 37 */
-YY_RULE(int) yy_comment(GREG *G); /* 36 */
-YY_RULE(int) yy_space(GREG *G); /* 35 */
-YY_RULE(int) yy_braces(GREG *G); /* 34 */
-YY_RULE(int) yy_range(GREG *G); /* 33 */
-YY_RULE(int) yy_char(GREG *G); /* 32 */
-YY_RULE(int) yy_errblock(GREG *G); /* 31 */
+YY_RULE(int) yy_end_of_line(GREG *G); /* 38 */
+YY_RULE(int) yy_comment(GREG *G); /* 37 */
+YY_RULE(int) yy_space(GREG *G); /* 36 */
+YY_RULE(int) yy_braces(GREG *G); /* 35 */
+YY_RULE(int) yy_range(GREG *G); /* 34 */
+YY_RULE(int) yy_char(GREG *G); /* 33 */
+YY_RULE(int) yy_errblock(GREG *G); /* 32 */
+YY_RULE(int) yy_NOBACK(GREG *G); /* 31 */
 YY_RULE(int) yy_END(GREG *G); /* 30 */
 YY_RULE(int) yy_BEGIN(GREG *G); /* 29 */
 YY_RULE(int) yy_DOT(GREG *G); /* 28 */
@@ -321,10 +345,15 @@ YY_RULE(int) yy_declaration(GREG *G); /* 3 */
 YY_RULE(int) yy__(GREG *G); /* 2 */
 YY_RULE(int) yy_grammar(GREG *G); /* 1 */
 
+YY_ACTION(void) yy_11_primary(GREG *G, char *yytext, int yyleng, yythunk *thunk, YY_XTYPE YY_XVAR)
+{
+  yyprintf((stderr, "do yy_11_primary\n"));
+   Node *node = pop(); ((struct Any *) node)->errblock = strdup(yytext); push(node); ;
+}
 YY_ACTION(void) yy_10_primary(GREG *G, char *yytext, int yyleng, yythunk *thunk, YY_XTYPE YY_XVAR)
 {
   yyprintf((stderr, "do yy_10_primary\n"));
-   Node *node = pop(); ((struct Any *) node)->errblock = strdup(yytext); push(node); ;
+   push(makeNoBack(yytext)); ;
 }
 YY_ACTION(void) yy_9_primary(GREG *G, char *yytext, int yyleng, yythunk *thunk, YY_XTYPE YY_XVAR)
 {
@@ -419,8 +448,7 @@ YY_ACTION(void) yy_2_definition(GREG *G, char *yytext, int yyleng, yythunk *thun
 YY_ACTION(void) yy_1_definition(GREG *G, char *yytext, int yyleng, yythunk *thunk, YY_XTYPE YY_XVAR)
 {
   yyprintf((stderr, "do yy_1_definition\n"));
-   if (push(beginRule(findRule(yytext)))->rule.expression)
-							    fprintf(stderr, "rule '%s' redefined\n", yytext); ;
+   if (push(beginRule(findRule(yytext)))->rule.expression) fprintf(stderr, "rule '%s' redefined\n", yytext); ;
 }
 YY_ACTION(void) yy_1_trailer(GREG *G, char *yytext, int yyleng, yythunk *thunk, YY_XTYPE YY_XVAR)
 {
@@ -434,504 +462,1096 @@ YY_ACTION(void) yy_1_declaration(GREG *G, char *yytext, int yyleng, yythunk *thu
 }
 
 YY_RULE(int) yy_end_of_line(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "end_of_line"));
-  {  int yypos2= G->pos, yythunkpos2= G->thunkpos;  if (!yymatchString(G, "\r\n")) goto l3;  goto l2;
-  l3:;	  G->pos= yypos2; G->thunkpos= yythunkpos2;  if (!yymatchChar(G, '\n')) goto l4;  goto l2;
-  l4:;	  G->pos= yypos2; G->thunkpos= yythunkpos2;  if (!yymatchChar(G, '\r')) goto l1;
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "end_of_line"));  const char* error0= 0; error0=error0;
+
+  {  yystate state2= G->state;
+  const char* error1= 0; error1=error1;
+  if (!yymatchString(G, "\r\n")) goto l3;  goto l2;
+  l3:;	  if (G->error.msg) goto l2;  G->state = state2;  if (!yymatchChar(G, '\n')) goto l4;  goto l2;
+  l4:;	  if (G->error.msg) goto l2;  G->state = state2;  if (!yymatchChar(G, '\r')) goto l1;
   }
   l2:;	
-  yyprintf((stderr, "  ok   %s @ %s\n", "end_of_line", G->buf+G->pos));
+  yyprintf((stderr, "  ok   %s @ %s\n", "end_of_line", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l1:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "end_of_line", G->buf+G->pos));
+  l1:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "end_of_line", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_comment(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "comment"));  if (!yymatchChar(G, '#')) goto l5;
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "comment"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchChar(G, '#')) goto l5;
   l6:;	
-  {  int yypos7= G->pos, yythunkpos7= G->thunkpos;
-  {  int yypos8= G->pos, yythunkpos8= G->thunkpos;  if (!yy_end_of_line(G)) { goto l8; }  goto l7;
-  l8:;	  G->pos= yypos8; G->thunkpos= yythunkpos8;
-  }  if (!yymatchDot(G)) goto l7;  goto l6;
-  l7:;	  G->pos= yypos7; G->thunkpos= yythunkpos7;
-  }  if (!yy_end_of_line(G)) { goto l5; }
-  yyprintf((stderr, "  ok   %s @ %s\n", "comment", G->buf+G->pos));
+  {  yystate state7= G->state;
+  const char* error2= 0; error2=error2;
+
+  {  const char* error3= 0; error3=error3;
+
+  {  yystate state8= G->state;
+  const char* error4= 0; error4=error4;
+  if (!yy_end_of_line(G)) { if (error4) { yyseterror(&G->error, &G->state, error4); return 0; } goto l8; }  goto l7;
+  l8:;	  G->state = state8;
+  }  if (!yymatchDot(G)) goto l7;
+  }  if (G->error.msg) goto l7;  goto l6;
+  l7:;	  G->state = state7;
+  }  if (!yy_end_of_line(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l5; }
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "comment", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l5:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "comment", G->buf+G->pos));
+  l5:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "comment", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_space(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "space"));
-  {  int yypos10= G->pos, yythunkpos10= G->thunkpos;  if (!yymatchChar(G, ' ')) goto l11;  goto l10;
-  l11:;	  G->pos= yypos10; G->thunkpos= yythunkpos10;  if (!yymatchChar(G, '\t')) goto l12;  goto l10;
-  l12:;	  G->pos= yypos10; G->thunkpos= yythunkpos10;  if (!yy_end_of_line(G)) { goto l9; }
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "space"));  const char* error0= 0; error0=error0;
+
+  {  yystate state10= G->state;
+  const char* error1= 0; error1=error1;
+  if (!yymatchChar(G, ' ')) goto l11;  goto l10;
+  l11:;	  if (G->error.msg) goto l10;  G->state = state10;  if (!yymatchChar(G, '\t')) goto l12;  goto l10;
+  l12:;	  if (G->error.msg) goto l10;  G->state = state10;  if (!yy_end_of_line(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l9; }
   }
   l10:;	
-  yyprintf((stderr, "  ok   %s @ %s\n", "space", G->buf+G->pos));
+  yyprintf((stderr, "  ok   %s @ %s\n", "space", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l9:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "space", G->buf+G->pos));
+  l9:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "space", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_braces(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "braces"));
-  {  int yypos14= G->pos, yythunkpos14= G->thunkpos;  if (!yymatchChar(G, '{')) goto l15;
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "braces"));  const char* error0= 0; error0=error0;
+
+  {  yystate state14= G->state;
+  const char* error1= 0; error1=error1;
+
+  {  const char* error2= 0; error2=error2;
+  if (!yymatchChar(G, '{')) goto l15;
   l16:;	
-  {  int yypos17= G->pos, yythunkpos17= G->thunkpos;
-  {  int yypos18= G->pos, yythunkpos18= G->thunkpos;  if (!yymatchChar(G, '}')) goto l18;  goto l17;
-  l18:;	  G->pos= yypos18; G->thunkpos= yythunkpos18;
-  }  if (!yymatchDot(G)) goto l17;  goto l16;
-  l17:;	  G->pos= yypos17; G->thunkpos= yythunkpos17;
-  }  if (!yymatchChar(G, '}')) goto l15;  goto l14;
-  l15:;	  G->pos= yypos14; G->thunkpos= yythunkpos14;
-  {  int yypos19= G->pos, yythunkpos19= G->thunkpos;  if (!yymatchChar(G, '}')) goto l19;  goto l13;
-  l19:;	  G->pos= yypos19; G->thunkpos= yythunkpos19;
+  {  yystate state17= G->state;
+  const char* error3= 0; error3=error3;
+
+  {  const char* error4= 0; error4=error4;
+
+  {  yystate state18= G->state;
+  const char* error5= 0; error5=error5;
+  if (!yymatchChar(G, '}')) goto l18;  goto l17;
+  l18:;	  G->state = state18;
+  }  if (!yymatchDot(G)) goto l17;
+  }  if (G->error.msg) goto l17;  goto l16;
+  l17:;	  G->state = state17;
+  }  if (!yymatchChar(G, '}')) goto l15;
+  }  goto l14;
+  l15:;	  if (G->error.msg) goto l14;  G->state = state14;
+  {  const char* error2= 0; error2=error2;
+
+  {  yystate state19= G->state;
+  const char* error3= 0; error3=error3;
+  if (!yymatchChar(G, '}')) goto l19;  goto l13;
+  l19:;	  G->state = state19;
   }  if (!yymatchDot(G)) goto l13;
   }
+  }
   l14:;	
-  yyprintf((stderr, "  ok   %s @ %s\n", "braces", G->buf+G->pos));
+  yyprintf((stderr, "  ok   %s @ %s\n", "braces", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l13:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "braces", G->buf+G->pos));
+  l13:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "braces", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_range(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "range"));
-  {  int yypos21= G->pos, yythunkpos21= G->thunkpos;  if (!yy_char(G)) { goto l22; }  if (!yymatchChar(G, '-')) goto l22;  if (!yy_char(G)) { goto l22; }  goto l21;
-  l22:;	  G->pos= yypos21; G->thunkpos= yythunkpos21;  if (!yy_char(G)) { goto l20; }
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "range"));  const char* error0= 0; error0=error0;
+
+  {  yystate state21= G->state;
+  const char* error1= 0; error1=error1;
+
+  {  const char* error2= 0; error2=error2;
+  if (!yy_char(G)) { if (error2) { yyseterror(&G->error, &G->state, error2); return 0; } goto l22; }  if (!yymatchChar(G, '-')) goto l22;  if (!yy_char(G)) { if (error2) { yyseterror(&G->error, &G->state, error2); return 0; } goto l22; }
+  }  goto l21;
+  l22:;	  if (G->error.msg) goto l21;  G->state = state21;  if (!yy_char(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l20; }
   }
   l21:;	
-  yyprintf((stderr, "  ok   %s @ %s\n", "range", G->buf+G->pos));
+  yyprintf((stderr, "  ok   %s @ %s\n", "range", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l20:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "range", G->buf+G->pos));
+  l20:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "range", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_char(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "char"));
-  {  int yypos24= G->pos, yythunkpos24= G->thunkpos;  if (!yymatchChar(G, '\\')) goto l25;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\204\000\000\000\000\000\000\070\146\100\124\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l25;  goto l24;
-  l25:;	  G->pos= yypos24; G->thunkpos= yythunkpos24;  if (!yymatchChar(G, '\\')) goto l26;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\000\000\017\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l26;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\000\000\377\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l26;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\000\000\377\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l26;  goto l24;
-  l26:;	  G->pos= yypos24; G->thunkpos= yythunkpos24;  if (!yymatchChar(G, '\\')) goto l27;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\000\000\377\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l27;
-  {  int yypos28= G->pos, yythunkpos28= G->thunkpos;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\000\000\377\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l28;  goto l29;
-  l28:;	  G->pos= yypos28; G->thunkpos= yythunkpos28;
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "char"));  const char* error0= 0; error0=error0;
+
+  {  yystate state24= G->state;
+  const char* error1= 0; error1=error1;
+
+  {  const char* error2= 0; error2=error2;
+  if (!yymatchChar(G, '\\')) goto l25;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\204\000\000\000\000\000\000\070\146\100\124\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l25;
+  }  goto l24;
+  l25:;	  if (G->error.msg) goto l24;  G->state = state24;
+  {  const char* error2= 0; error2=error2;
+  if (!yymatchChar(G, '\\')) goto l26;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\000\000\017\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l26;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\000\000\377\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l26;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\000\000\377\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l26;
+  }  goto l24;
+  l26:;	  if (G->error.msg) goto l24;  G->state = state24;
+  {  const char* error2= 0; error2=error2;
+  if (!yymatchChar(G, '\\')) goto l27;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\000\000\377\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l27;
+  {  yystate state28= G->state;
+  const char* error3= 0; error3=error3;
+  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\000\000\377\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l28;  goto l29;
+  l28:;	  G->state = state28;
   }
-  l29:;	  goto l24;
-  l27:;	  G->pos= yypos24; G->thunkpos= yythunkpos24;
-  {  int yypos30= G->pos, yythunkpos30= G->thunkpos;  if (!yymatchChar(G, '\\')) goto l30;  goto l23;
-  l30:;	  G->pos= yypos30; G->thunkpos= yythunkpos30;
+  l29:;	
+  }  goto l24;
+  l27:;	  if (G->error.msg) goto l24;  G->state = state24;
+  {  const char* error2= 0; error2=error2;
+
+  {  yystate state30= G->state;
+  const char* error3= 0; error3=error3;
+  if (!yymatchChar(G, '\\')) goto l30;  goto l23;
+  l30:;	  G->state = state30;
   }  if (!yymatchDot(G)) goto l23;
   }
+  }
   l24:;	
-  yyprintf((stderr, "  ok   %s @ %s\n", "char", G->buf+G->pos));
+  yyprintf((stderr, "  ok   %s @ %s\n", "char", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l23:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "char", G->buf+G->pos));
+  l23:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "char", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_errblock(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "errblock"));  if (!yymatchString(G, "~{")) goto l31;  yyText(G, G->begin, G->end);  if (!(YY_BEGIN)) goto l31;
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "errblock"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchString(G, "~{")) goto l31;  yyText(G, textpos?textpos:G->state.textpos, G->end);  if (!(YY_BEGIN)) goto l31;
   l32:;	
-  {  int yypos33= G->pos, yythunkpos33= G->thunkpos;  if (!yy_braces(G)) { goto l33; }  goto l32;
-  l33:;	  G->pos= yypos33; G->thunkpos= yythunkpos33;
-  }  yyText(G, G->begin, G->end);  if (!(YY_END)) goto l31;  if (!yymatchChar(G, '}')) goto l31;  if (!yy__(G)) { goto l31; }
-  yyprintf((stderr, "  ok   %s @ %s\n", "errblock", G->buf+G->pos));
+  {  yystate state33= G->state;
+  const char* error2= 0; error2=error2;
+  if (!yy_braces(G)) { if (error2) { yyseterror(&G->error, &G->state, error2); return 0; } goto l33; }  if (G->error.msg) goto l33;  goto l32;
+  l33:;	  G->state = state33;
+  }  yyText(G, textpos?textpos:G->state.textpos, G->end);  if (!(YY_END)) goto l31;  if (!yymatchChar(G, '}')) goto l31;  if (!yy__(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l31; }
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "errblock", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l31:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "errblock", G->buf+G->pos));
+  l31:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "errblock", G->buf+G->state.pos));
+  return 0;
+}
+YY_RULE(int) yy_NOBACK(GREG *G)
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "NOBACK"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchChar(G, '@')) goto l34;  if (!yy__(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l34; }
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "NOBACK", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
+  return 1;
+  l34:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "NOBACK", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_END(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "END"));  if (!yymatchChar(G, '>')) goto l34;  if (!yy__(G)) { goto l34; }
-  yyprintf((stderr, "  ok   %s @ %s\n", "END", G->buf+G->pos));
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "END"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchChar(G, '>')) goto l35;  if (!yy__(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l35; }
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "END", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l34:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "END", G->buf+G->pos));
+  l35:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "END", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_BEGIN(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "BEGIN"));  if (!yymatchChar(G, '<')) goto l35;  if (!yy__(G)) { goto l35; }
-  yyprintf((stderr, "  ok   %s @ %s\n", "BEGIN", G->buf+G->pos));
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "BEGIN"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchChar(G, '<')) goto l36;  if (!yy__(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l36; }
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "BEGIN", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l35:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "BEGIN", G->buf+G->pos));
+  l36:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "BEGIN", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_DOT(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "DOT"));  if (!yymatchChar(G, '.')) goto l36;  if (!yy__(G)) { goto l36; }
-  yyprintf((stderr, "  ok   %s @ %s\n", "DOT", G->buf+G->pos));
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "DOT"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchChar(G, '.')) goto l37;  if (!yy__(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l37; }
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "DOT", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l36:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "DOT", G->buf+G->pos));
+  l37:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "DOT", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_class(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "class"));  if (!yymatchChar(G, '[')) goto l37;  yyText(G, G->begin, G->end);  if (!(YY_BEGIN)) goto l37;
-  l38:;	
-  {  int yypos39= G->pos, yythunkpos39= G->thunkpos;
-  {  int yypos40= G->pos, yythunkpos40= G->thunkpos;  if (!yymatchChar(G, ']')) goto l40;  goto l39;
-  l40:;	  G->pos= yypos40; G->thunkpos= yythunkpos40;
-  }  if (!yy_range(G)) { goto l39; }  goto l38;
-  l39:;	  G->pos= yypos39; G->thunkpos= yythunkpos39;
-  }  yyText(G, G->begin, G->end);  if (!(YY_END)) goto l37;  if (!yymatchChar(G, ']')) goto l37;  if (!yy__(G)) { goto l37; }
-  yyprintf((stderr, "  ok   %s @ %s\n", "class", G->buf+G->pos));
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "class"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchChar(G, '[')) goto l38;  yyText(G, textpos?textpos:G->state.textpos, G->end);  if (!(YY_BEGIN)) goto l38;
+  l39:;	
+  {  yystate state40= G->state;
+  const char* error2= 0; error2=error2;
+
+  {  const char* error3= 0; error3=error3;
+
+  {  yystate state41= G->state;
+  const char* error4= 0; error4=error4;
+  if (!yymatchChar(G, ']')) goto l41;  goto l40;
+  l41:;	  G->state = state41;
+  }  if (!yy_range(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l40; }
+  }  if (G->error.msg) goto l40;  goto l39;
+  l40:;	  G->state = state40;
+  }  yyText(G, textpos?textpos:G->state.textpos, G->end);  if (!(YY_END)) goto l38;  if (!yymatchChar(G, ']')) goto l38;  if (!yy__(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l38; }
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "class", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l37:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "class", G->buf+G->pos));
+  l38:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "class", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_literal(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "literal"));
-  {  int yypos42= G->pos, yythunkpos42= G->thunkpos;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\200\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l43;  yyText(G, G->begin, G->end);  if (!(YY_BEGIN)) goto l43;
-  l44:;	
-  {  int yypos45= G->pos, yythunkpos45= G->thunkpos;
-  {  int yypos46= G->pos, yythunkpos46= G->thunkpos;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\200\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l46;  goto l45;
-  l46:;	  G->pos= yypos46; G->thunkpos= yythunkpos46;
-  }  if (!yy_char(G)) { goto l45; }  goto l44;
-  l45:;	  G->pos= yypos45; G->thunkpos= yythunkpos45;
-  }  yyText(G, G->begin, G->end);  if (!(YY_END)) goto l43;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\200\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l43;  if (!yy__(G)) { goto l43; }  goto l42;
-  l43:;	  G->pos= yypos42; G->thunkpos= yythunkpos42;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\004\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l41;  yyText(G, G->begin, G->end);  if (!(YY_BEGIN)) goto l41;
-  l47:;	
-  {  int yypos48= G->pos, yythunkpos48= G->thunkpos;
-  {  int yypos49= G->pos, yythunkpos49= G->thunkpos;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\004\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l49;  goto l48;
-  l49:;	  G->pos= yypos49; G->thunkpos= yythunkpos49;
-  }  if (!yy_char(G)) { goto l48; }  goto l47;
-  l48:;	  G->pos= yypos48; G->thunkpos= yythunkpos48;
-  }  yyText(G, G->begin, G->end);  if (!(YY_END)) goto l41;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\004\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l41;  if (!yy__(G)) { goto l41; }
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "literal"));  const char* error0= 0; error0=error0;
+
+  {  yystate state43= G->state;
+  const char* error1= 0; error1=error1;
+
+  {  const char* error2= 0; error2=error2;
+  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\200\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l44;  yyText(G, textpos?textpos:G->state.textpos, G->end);  if (!(YY_BEGIN)) goto l44;
+  l45:;	
+  {  yystate state46= G->state;
+  const char* error3= 0; error3=error3;
+
+  {  const char* error4= 0; error4=error4;
+
+  {  yystate state47= G->state;
+  const char* error5= 0; error5=error5;
+  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\200\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l47;  goto l46;
+  l47:;	  G->state = state47;
+  }  if (!yy_char(G)) { if (error4) { yyseterror(&G->error, &G->state, error4); return 0; } goto l46; }
+  }  if (G->error.msg) goto l46;  goto l45;
+  l46:;	  G->state = state46;
+  }  yyText(G, textpos?textpos:G->state.textpos, G->end);  if (!(YY_END)) goto l44;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\200\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l44;  if (!yy__(G)) { if (error2) { yyseterror(&G->error, &G->state, error2); return 0; } goto l44; }
+  }  goto l43;
+  l44:;	  if (G->error.msg) goto l43;  G->state = state43;
+  {  const char* error2= 0; error2=error2;
+  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\004\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l42;  yyText(G, textpos?textpos:G->state.textpos, G->end);  if (!(YY_BEGIN)) goto l42;
+  l48:;	
+  {  yystate state49= G->state;
+  const char* error3= 0; error3=error3;
+
+  {  const char* error4= 0; error4=error4;
+
+  {  yystate state50= G->state;
+  const char* error5= 0; error5=error5;
+  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\004\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l50;  goto l49;
+  l50:;	  G->state = state50;
+  }  if (!yy_char(G)) { if (error4) { yyseterror(&G->error, &G->state, error4); return 0; } goto l49; }
+  }  if (G->error.msg) goto l49;  goto l48;
+  l49:;	  G->state = state49;
+  }  yyText(G, textpos?textpos:G->state.textpos, G->end);  if (!(YY_END)) goto l42;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\004\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l42;  if (!yy__(G)) { if (error2) { yyseterror(&G->error, &G->state, error2); return 0; } goto l42; }
   }
-  l42:;	
-  yyprintf((stderr, "  ok   %s @ %s\n", "literal", G->buf+G->pos));
+  }
+  l43:;	
+  yyprintf((stderr, "  ok   %s @ %s\n", "literal", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l41:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "literal", G->buf+G->pos));
+  l42:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "literal", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_CLOSE(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "CLOSE"));  if (!yymatchChar(G, ')')) goto l50;  if (!yy__(G)) { goto l50; }
-  yyprintf((stderr, "  ok   %s @ %s\n", "CLOSE", G->buf+G->pos));
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "CLOSE"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchChar(G, ')')) goto l51;  if (!yy__(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l51; }
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "CLOSE", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l50:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "CLOSE", G->buf+G->pos));
+  l51:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "CLOSE", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_OPEN(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "OPEN"));  if (!yymatchChar(G, '(')) goto l51;  if (!yy__(G)) { goto l51; }
-  yyprintf((stderr, "  ok   %s @ %s\n", "OPEN", G->buf+G->pos));
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "OPEN"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchChar(G, '(')) goto l52;  if (!yy__(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l52; }
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "OPEN", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l51:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "OPEN", G->buf+G->pos));
+  l52:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "OPEN", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_COLON(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "COLON"));  if (!yymatchChar(G, ':')) goto l52;  if (!yy__(G)) { goto l52; }
-  yyprintf((stderr, "  ok   %s @ %s\n", "COLON", G->buf+G->pos));
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "COLON"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchChar(G, ':')) goto l53;  if (!yy__(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l53; }
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "COLON", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l52:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "COLON", G->buf+G->pos));
+  l53:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "COLON", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_PLUS(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "PLUS"));  if (!yymatchChar(G, '+')) goto l53;  if (!yy__(G)) { goto l53; }
-  yyprintf((stderr, "  ok   %s @ %s\n", "PLUS", G->buf+G->pos));
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "PLUS"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchChar(G, '+')) goto l54;  if (!yy__(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l54; }
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "PLUS", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l53:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "PLUS", G->buf+G->pos));
+  l54:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "PLUS", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_STAR(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "STAR"));  if (!yymatchChar(G, '*')) goto l54;  if (!yy__(G)) { goto l54; }
-  yyprintf((stderr, "  ok   %s @ %s\n", "STAR", G->buf+G->pos));
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "STAR"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchChar(G, '*')) goto l55;  if (!yy__(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l55; }
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "STAR", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l54:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "STAR", G->buf+G->pos));
+  l55:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "STAR", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_QUESTION(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "QUESTION"));  if (!yymatchChar(G, '?')) goto l55;  if (!yy__(G)) { goto l55; }
-  yyprintf((stderr, "  ok   %s @ %s\n", "QUESTION", G->buf+G->pos));
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "QUESTION"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchChar(G, '?')) goto l56;  if (!yy__(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l56; }
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "QUESTION", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l55:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "QUESTION", G->buf+G->pos));
+  l56:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "QUESTION", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_primary(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "primary"));
-  {  int yypos57= G->pos, yythunkpos57= G->thunkpos;  if (!yy_identifier(G)) { goto l58; }  yyDo(G, yy_1_primary, G->begin, G->end);  if (!yy_COLON(G)) { goto l58; }  if (!yy_identifier(G)) { goto l58; }
-  {  int yypos59= G->pos, yythunkpos59= G->thunkpos;  if (!yy_EQUAL(G)) { goto l59; }  goto l58;
-  l59:;	  G->pos= yypos59; G->thunkpos= yythunkpos59;
-  }  yyDo(G, yy_2_primary, G->begin, G->end);  goto l57;
-  l58:;	  G->pos= yypos57; G->thunkpos= yythunkpos57;  if (!yy_identifier(G)) { goto l60; }
-  {  int yypos61= G->pos, yythunkpos61= G->thunkpos;  if (!yy_EQUAL(G)) { goto l61; }  goto l60;
-  l61:;	  G->pos= yypos61; G->thunkpos= yythunkpos61;
-  }  yyDo(G, yy_3_primary, G->begin, G->end);  goto l57;
-  l60:;	  G->pos= yypos57; G->thunkpos= yythunkpos57;  if (!yy_OPEN(G)) { goto l62; }  if (!yy_expression(G)) { goto l62; }  if (!yy_CLOSE(G)) { goto l62; }  goto l57;
-  l62:;	  G->pos= yypos57; G->thunkpos= yythunkpos57;  if (!yy_literal(G)) { goto l63; }  yyDo(G, yy_4_primary, G->begin, G->end);  goto l57;
-  l63:;	  G->pos= yypos57; G->thunkpos= yythunkpos57;  if (!yy_class(G)) { goto l64; }  yyDo(G, yy_5_primary, G->begin, G->end);  goto l57;
-  l64:;	  G->pos= yypos57; G->thunkpos= yythunkpos57;  if (!yy_DOT(G)) { goto l65; }  yyDo(G, yy_6_primary, G->begin, G->end);  goto l57;
-  l65:;	  G->pos= yypos57; G->thunkpos= yythunkpos57;  if (!yy_action(G)) { goto l66; }  yyDo(G, yy_7_primary, G->begin, G->end);  goto l57;
-  l66:;	  G->pos= yypos57; G->thunkpos= yythunkpos57;  if (!yy_BEGIN(G)) { goto l67; }  yyDo(G, yy_8_primary, G->begin, G->end);  goto l57;
-  l67:;	  G->pos= yypos57; G->thunkpos= yythunkpos57;  if (!yy_END(G)) { goto l56; }  yyDo(G, yy_9_primary, G->begin, G->end);
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "primary"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+
+  {  yystate state58= G->state;
+  const char* error2= 0; error2=error2;
+
+  {  const char* error3= 0; error3=error3;
+  if (!yy_identifier(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l59; }  yyDo(G, yy_1_primary, textpos?textpos:G->state.textpos, G->end);  if (!yy_COLON(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l59; }  if (!yy_identifier(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l59; }
+  {  yystate state60= G->state;
+  const char* error4= 0; error4=error4;
+  if (!yy_EQUAL(G)) { if (error4) { yyseterror(&G->error, &G->state, error4); return 0; } goto l60; }  goto l59;
+  l60:;	  G->state = state60;
+  }  yyDo(G, yy_2_primary, textpos?textpos:G->state.textpos, G->end);
+  }  goto l58;
+  l59:;	  if (G->error.msg) goto l58;  G->state = state58;
+  {  const char* error3= 0; error3=error3;
+  if (!yy_identifier(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l61; }
+  {  yystate state62= G->state;
+  const char* error4= 0; error4=error4;
+  if (!yy_EQUAL(G)) { if (error4) { yyseterror(&G->error, &G->state, error4); return 0; } goto l62; }  goto l61;
+  l62:;	  G->state = state62;
+  }  yyDo(G, yy_3_primary, textpos?textpos:G->state.textpos, G->end);
+  }  goto l58;
+  l61:;	  if (G->error.msg) goto l58;  G->state = state58;
+  {  const char* error3= 0; error3=error3;
+  if (!yy_OPEN(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l63; }  error3 = "an expression";
+  if (!yy_expression(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l63; }  error3 = "a closing ')'";
+  if (!yy_CLOSE(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l63; }
+  }  goto l58;
+  l63:;	  if (G->error.msg) goto l58;  G->state = state58;
+  {  const char* error3= 0; error3=error3;
+  if (!yy_literal(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l64; }  yyDo(G, yy_4_primary, textpos?textpos:G->state.textpos, G->end);
+  }  goto l58;
+  l64:;	  if (G->error.msg) goto l58;  G->state = state58;
+  {  const char* error3= 0; error3=error3;
+  if (!yy_class(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l65; }  yyDo(G, yy_5_primary, textpos?textpos:G->state.textpos, G->end);
+  }  goto l58;
+  l65:;	  if (G->error.msg) goto l58;  G->state = state58;
+  {  const char* error3= 0; error3=error3;
+  if (!yy_DOT(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l66; }  yyDo(G, yy_6_primary, textpos?textpos:G->state.textpos, G->end);
+  }  goto l58;
+  l66:;	  if (G->error.msg) goto l58;  G->state = state58;
+  {  const char* error3= 0; error3=error3;
+  if (!yy_action(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l67; }  yyDo(G, yy_7_primary, textpos?textpos:G->state.textpos, G->end);
+  }  goto l58;
+  l67:;	  if (G->error.msg) goto l58;  G->state = state58;
+  {  const char* error3= 0; error3=error3;
+  if (!yy_BEGIN(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l68; }  yyDo(G, yy_8_primary, textpos?textpos:G->state.textpos, G->end);
+  }  goto l58;
+  l68:;	  if (G->error.msg) goto l58;  G->state = state58;
+  {  const char* error3= 0; error3=error3;
+  if (!yy_END(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l69; }  yyDo(G, yy_9_primary, textpos?textpos:G->state.textpos, G->end);
+  }  goto l58;
+  l69:;	  if (G->error.msg) goto l58;  G->state = state58;
+  {  const char* error3= 0; error3=error3;
+  if (!yy_NOBACK(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l57; }  if (!yy_literal(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l57; }  yyDo(G, yy_10_primary, textpos?textpos:G->state.textpos, G->end);
   }
-  l57:;	
-  {  int yypos68= G->pos, yythunkpos68= G->thunkpos;  if (!yy_errblock(G)) { goto l68; }  yyDo(G, yy_10_primary, G->begin, G->end);  goto l69;
-  l68:;	  G->pos= yypos68; G->thunkpos= yythunkpos68;
   }
-  l69:;	
-  yyprintf((stderr, "  ok   %s @ %s\n", "primary", G->buf+G->pos));
+  l58:;	
+  {  yystate state70= G->state;
+  const char* error2= 0; error2=error2;
+
+  {  const char* error3= 0; error3=error3;
+  if (!yy_errblock(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l70; }  yyDo(G, yy_11_primary, textpos?textpos:G->state.textpos, G->end);
+  }  goto l71;
+  l70:;	  G->state = state70;
+  }
+  l71:;	
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "primary", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l56:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "primary", G->buf+G->pos));
+  l57:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "primary", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_NOT(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "NOT"));  if (!yymatchChar(G, '!')) goto l70;  if (!yy__(G)) { goto l70; }
-  yyprintf((stderr, "  ok   %s @ %s\n", "NOT", G->buf+G->pos));
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "NOT"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchChar(G, '!')) goto l72;  if (!yy__(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l72; }
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "NOT", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l70:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "NOT", G->buf+G->pos));
+  l72:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "NOT", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_suffix(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "suffix"));  if (!yy_primary(G)) { goto l71; }
-  {  int yypos72= G->pos, yythunkpos72= G->thunkpos;
-  {  int yypos74= G->pos, yythunkpos74= G->thunkpos;  if (!yy_QUESTION(G)) { goto l75; }  yyDo(G, yy_1_suffix, G->begin, G->end);  goto l74;
-  l75:;	  G->pos= yypos74; G->thunkpos= yythunkpos74;  if (!yy_STAR(G)) { goto l76; }  yyDo(G, yy_2_suffix, G->begin, G->end);  goto l74;
-  l76:;	  G->pos= yypos74; G->thunkpos= yythunkpos74;  if (!yy_PLUS(G)) { goto l72; }  yyDo(G, yy_3_suffix, G->begin, G->end);
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "suffix"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yy_primary(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l73; }
+  {  yystate state74= G->state;
+  const char* error2= 0; error2=error2;
+
+  {  yystate state76= G->state;
+  const char* error3= 0; error3=error3;
+
+  {  const char* error4= 0; error4=error4;
+  if (!yy_QUESTION(G)) { if (error4) { yyseterror(&G->error, &G->state, error4); return 0; } goto l77; }  yyDo(G, yy_1_suffix, textpos?textpos:G->state.textpos, G->end);
+  }  goto l76;
+  l77:;	  if (G->error.msg) goto l76;  G->state = state76;
+  {  const char* error4= 0; error4=error4;
+  if (!yy_STAR(G)) { if (error4) { yyseterror(&G->error, &G->state, error4); return 0; } goto l78; }  yyDo(G, yy_2_suffix, textpos?textpos:G->state.textpos, G->end);
+  }  goto l76;
+  l78:;	  if (G->error.msg) goto l76;  G->state = state76;
+  {  const char* error4= 0; error4=error4;
+  if (!yy_PLUS(G)) { if (error4) { yyseterror(&G->error, &G->state, error4); return 0; } goto l74; }  yyDo(G, yy_3_suffix, textpos?textpos:G->state.textpos, G->end);
   }
-  l74:;	  goto l73;
-  l72:;	  G->pos= yypos72; G->thunkpos= yythunkpos72;
   }
-  l73:;	
-  yyprintf((stderr, "  ok   %s @ %s\n", "suffix", G->buf+G->pos));
+  l76:;	  goto l75;
+  l74:;	  G->state = state74;
+  }
+  l75:;	
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "suffix", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l71:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "suffix", G->buf+G->pos));
+  l73:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "suffix", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_action(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "action"));  if (!yymatchChar(G, '{')) goto l77;  yyText(G, G->begin, G->end);  if (!(YY_BEGIN)) goto l77;
-  l78:;	
-  {  int yypos79= G->pos, yythunkpos79= G->thunkpos;  if (!yy_braces(G)) { goto l79; }  goto l78;
-  l79:;	  G->pos= yypos79; G->thunkpos= yythunkpos79;
-  }  yyText(G, G->begin, G->end);  if (!(YY_END)) goto l77;  if (!yymatchChar(G, '}')) goto l77;  if (!yy__(G)) { goto l77; }
-  yyprintf((stderr, "  ok   %s @ %s\n", "action", G->buf+G->pos));
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "action"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchChar(G, '{')) goto l79;  yyText(G, textpos?textpos:G->state.textpos, G->end);  if (!(YY_BEGIN)) goto l79;
+  l80:;	
+  {  yystate state81= G->state;
+  const char* error2= 0; error2=error2;
+  if (!yy_braces(G)) { if (error2) { yyseterror(&G->error, &G->state, error2); return 0; } goto l81; }  if (G->error.msg) goto l81;  goto l80;
+  l81:;	  G->state = state81;
+  }  yyText(G, textpos?textpos:G->state.textpos, G->end);  if (!(YY_END)) goto l79;  if (!yymatchChar(G, '}')) goto l79;  if (!yy__(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l79; }
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "action", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l77:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "action", G->buf+G->pos));
+  l79:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "action", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_AND(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "AND"));  if (!yymatchChar(G, '&')) goto l80;  if (!yy__(G)) { goto l80; }
-  yyprintf((stderr, "  ok   %s @ %s\n", "AND", G->buf+G->pos));
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "AND"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchChar(G, '&')) goto l82;  if (!yy__(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l82; }
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "AND", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l80:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "AND", G->buf+G->pos));
+  l82:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "AND", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_prefix(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "prefix"));
-  {  int yypos82= G->pos, yythunkpos82= G->thunkpos;  if (!yy_AND(G)) { goto l83; }  if (!yy_action(G)) { goto l83; }  yyDo(G, yy_1_prefix, G->begin, G->end);  goto l82;
-  l83:;	  G->pos= yypos82; G->thunkpos= yythunkpos82;  if (!yy_AND(G)) { goto l84; }  if (!yy_suffix(G)) { goto l84; }  yyDo(G, yy_2_prefix, G->begin, G->end);  goto l82;
-  l84:;	  G->pos= yypos82; G->thunkpos= yythunkpos82;  if (!yy_NOT(G)) { goto l85; }  if (!yy_suffix(G)) { goto l85; }  yyDo(G, yy_3_prefix, G->begin, G->end);  goto l82;
-  l85:;	  G->pos= yypos82; G->thunkpos= yythunkpos82;  if (!yy_suffix(G)) { goto l81; }
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "prefix"));  const char* error0= 0; error0=error0;
+
+  {  yystate state84= G->state;
+  const char* error1= 0; error1=error1;
+
+  {  const char* error2= 0; error2=error2;
+  if (!yy_AND(G)) { if (error2) { yyseterror(&G->error, &G->state, error2); return 0; } goto l85; }  if (!yy_action(G)) { if (error2) { yyseterror(&G->error, &G->state, error2); return 0; } goto l85; }  yyDo(G, yy_1_prefix, textpos?textpos:G->state.textpos, G->end);
+  }  goto l84;
+  l85:;	  if (G->error.msg) goto l84;  G->state = state84;
+  {  const char* error2= 0; error2=error2;
+  if (!yy_AND(G)) { if (error2) { yyseterror(&G->error, &G->state, error2); return 0; } goto l86; }  error2 = "an action or expression";
+  if (!yy_suffix(G)) { if (error2) { yyseterror(&G->error, &G->state, error2); return 0; } goto l86; }  yyDo(G, yy_2_prefix, textpos?textpos:G->state.textpos, G->end);
+  }  goto l84;
+  l86:;	  if (G->error.msg) goto l84;  G->state = state84;
+  {  const char* error2= 0; error2=error2;
+  if (!yy_NOT(G)) { if (error2) { yyseterror(&G->error, &G->state, error2); return 0; } goto l87; }  if (!yy_suffix(G)) { if (error2) { yyseterror(&G->error, &G->state, error2); return 0; } goto l87; }  yyDo(G, yy_3_prefix, textpos?textpos:G->state.textpos, G->end);
+  }  goto l84;
+  l87:;	  if (G->error.msg) goto l84;  G->state = state84;  if (!yy_suffix(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l83; }
   }
-  l82:;	
-  yyprintf((stderr, "  ok   %s @ %s\n", "prefix", G->buf+G->pos));
+  l84:;	
+  yyprintf((stderr, "  ok   %s @ %s\n", "prefix", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l81:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "prefix", G->buf+G->pos));
+  l83:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "prefix", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_BAR(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "BAR"));  if (!yymatchChar(G, '|')) goto l86;  if (!yy__(G)) { goto l86; }
-  yyprintf((stderr, "  ok   %s @ %s\n", "BAR", G->buf+G->pos));
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "BAR"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchChar(G, '|')) goto l88;  if (!yy__(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l88; }
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "BAR", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l86:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "BAR", G->buf+G->pos));
+  l88:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "BAR", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_sequence(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "sequence"));  if (!yy_prefix(G)) { goto l87; }
-  l88:;	
-  {  int yypos89= G->pos, yythunkpos89= G->thunkpos;  if (!yy_prefix(G)) { goto l89; }  yyDo(G, yy_1_sequence, G->begin, G->end);  goto l88;
-  l89:;	  G->pos= yypos89; G->thunkpos= yythunkpos89;
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "sequence"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yy_prefix(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l89; }
+  l90:;	
+  {  yystate state91= G->state;
+  const char* error2= 0; error2=error2;
+
+  {  const char* error3= 0; error3=error3;
+  if (!yy_prefix(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l91; }  yyDo(G, yy_1_sequence, textpos?textpos:G->state.textpos, G->end);
+  }  if (G->error.msg) goto l91;  goto l90;
+  l91:;	  G->state = state91;
   }
-  yyprintf((stderr, "  ok   %s @ %s\n", "sequence", G->buf+G->pos));
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "sequence", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l87:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "sequence", G->buf+G->pos));
+  l89:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "sequence", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_SEMICOLON(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "SEMICOLON"));  if (!yymatchChar(G, ';')) goto l90;  if (!yy__(G)) { goto l90; }
-  yyprintf((stderr, "  ok   %s @ %s\n", "SEMICOLON", G->buf+G->pos));
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "SEMICOLON"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchChar(G, ';')) goto l92;  if (!yy__(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l92; }
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "SEMICOLON", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l90:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "SEMICOLON", G->buf+G->pos));
+  l92:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "SEMICOLON", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_expression(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "expression"));  if (!yy_sequence(G)) { goto l91; }
-  l92:;	
-  {  int yypos93= G->pos, yythunkpos93= G->thunkpos;  if (!yy_BAR(G)) { goto l93; }  if (!yy_sequence(G)) { goto l93; }  yyDo(G, yy_1_expression, G->begin, G->end);  goto l92;
-  l93:;	  G->pos= yypos93; G->thunkpos= yythunkpos93;
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "expression"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yy_sequence(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l93; }
+  l94:;	
+  {  yystate state95= G->state;
+  const char* error2= 0; error2=error2;
+
+  {  const char* error3= 0; error3=error3;
+  if (!yy_BAR(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l95; }  error3 = "an expression";
+  if (!yy_sequence(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l95; }  yyDo(G, yy_1_expression, textpos?textpos:G->state.textpos, G->end);
+  }  if (G->error.msg) goto l95;  goto l94;
+  l95:;	  G->state = state95;
   }
-  yyprintf((stderr, "  ok   %s @ %s\n", "expression", G->buf+G->pos));
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "expression", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l91:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "expression", G->buf+G->pos));
+  l93:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "expression", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_EQUAL(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "EQUAL"));  if (!yymatchChar(G, '=')) goto l94;  if (!yy__(G)) { goto l94; }
-  yyprintf((stderr, "  ok   %s @ %s\n", "EQUAL", G->buf+G->pos));
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "EQUAL"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchChar(G, '=')) goto l96;  if (!yy__(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l96; }
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "EQUAL", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l94:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "EQUAL", G->buf+G->pos));
+  l96:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "EQUAL", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_identifier(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "identifier"));  yyText(G, G->begin, G->end);  if (!(YY_BEGIN)) goto l95;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\000\040\000\000\376\377\377\207\376\377\377\007\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l95;
-  l96:;	
-  {  int yypos97= G->pos, yythunkpos97= G->thunkpos;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\000\040\377\003\376\377\377\207\376\377\377\007\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l97;  goto l96;
-  l97:;	  G->pos= yypos97; G->thunkpos= yythunkpos97;
-  }  yyText(G, G->begin, G->end);  if (!(YY_END)) goto l95;  if (!yy__(G)) { goto l95; }
-  yyprintf((stderr, "  ok   %s @ %s\n", "identifier", G->buf+G->pos));
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "identifier"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  yyText(G, textpos?textpos:G->state.textpos, G->end);  if (!(YY_BEGIN)) goto l97;  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\000\040\000\000\376\377\377\207\376\377\377\007\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l97;
+  l98:;	
+  {  yystate state99= G->state;
+  const char* error2= 0; error2=error2;
+  if (!yymatchClass(G, (unsigned char *)"\000\000\000\000\000\040\377\003\376\377\377\207\376\377\377\007\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l99;  if (G->error.msg) goto l99;  goto l98;
+  l99:;	  G->state = state99;
+  }  yyText(G, textpos?textpos:G->state.textpos, G->end);  if (!(YY_END)) goto l97;  if (!yy__(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l97; }
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "identifier", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l95:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "identifier", G->buf+G->pos));
+  l97:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "identifier", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_RPERCENT(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "RPERCENT"));  if (!yymatchString(G, "%}")) goto l98;  if (!yy__(G)) { goto l98; }
-  yyprintf((stderr, "  ok   %s @ %s\n", "RPERCENT", G->buf+G->pos));
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "RPERCENT"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchString(G, "%}")) goto l100;  if (!yy__(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l100; }
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "RPERCENT", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l98:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "RPERCENT", G->buf+G->pos));
+  l100:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "RPERCENT", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_end_of_file(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "end_of_file"));
-  {  int yypos100= G->pos, yythunkpos100= G->thunkpos;  if (!yymatchDot(G)) goto l100;  goto l99;
-  l100:;	  G->pos= yypos100; G->thunkpos= yythunkpos100;
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "end_of_file"));  const char* error0= 0; error0=error0;
+
+  {  yystate state102= G->state;
+  const char* error1= 0; error1=error1;
+  if (!yymatchDot(G)) goto l102;  goto l101;
+  l102:;	  G->state = state102;
   }
-  yyprintf((stderr, "  ok   %s @ %s\n", "end_of_file", G->buf+G->pos));
+  yyprintf((stderr, "  ok   %s @ %s\n", "end_of_file", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l99:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "end_of_file", G->buf+G->pos));
+  l101:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "end_of_file", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_trailer(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "trailer"));  if (!yymatchString(G, "%%")) goto l101;  yyText(G, G->begin, G->end);  if (!(YY_BEGIN)) goto l101;
-  l102:;	
-  {  int yypos103= G->pos, yythunkpos103= G->thunkpos;  if (!yymatchDot(G)) goto l103;  goto l102;
-  l103:;	  G->pos= yypos103; G->thunkpos= yythunkpos103;
-  }  yyText(G, G->begin, G->end);  if (!(YY_END)) goto l101;  yyDo(G, yy_1_trailer, G->begin, G->end);
-  yyprintf((stderr, "  ok   %s @ %s\n", "trailer", G->buf+G->pos));
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "trailer"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchString(G, "%%")) goto l103;  yyText(G, textpos?textpos:G->state.textpos, G->end);  if (!(YY_BEGIN)) goto l103;
+  l104:;	
+  {  yystate state105= G->state;
+  const char* error2= 0; error2=error2;
+  if (!yymatchDot(G)) goto l105;  if (G->error.msg) goto l105;  goto l104;
+  l105:;	  G->state = state105;
+  }  yyText(G, textpos?textpos:G->state.textpos, G->end);  if (!(YY_END)) goto l103;  yyDo(G, yy_1_trailer, textpos?textpos:G->state.textpos, G->end);
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "trailer", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l101:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "trailer", G->buf+G->pos));
+  l103:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "trailer", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_definition(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "definition"));  if (!yy_identifier(G)) { goto l104; }  yyDo(G, yy_1_definition, G->begin, G->end);  if (!yy_EQUAL(G)) { goto l104; }  if (!yy_expression(G)) { goto l104; }  yyDo(G, yy_2_definition, G->begin, G->end);
-  {  int yypos105= G->pos, yythunkpos105= G->thunkpos;  if (!yy_SEMICOLON(G)) { goto l105; }  goto l106;
-  l105:;	  G->pos= yypos105; G->thunkpos= yythunkpos105;
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "definition"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yy_identifier(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l106; }  yyDo(G, yy_1_definition, textpos?textpos:G->state.textpos, G->end);  if (!yy_EQUAL(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l106; }  error1 = "rule definition";
+  if (!yy_expression(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l106; }  yyDo(G, yy_2_definition, textpos?textpos:G->state.textpos, G->end);
+  {  yystate state107= G->state;
+  const char* error2= 0; error2=error2;
+  if (!yy_SEMICOLON(G)) { if (error2) { yyseterror(&G->error, &G->state, error2); return 0; } goto l107; }  goto l108;
+  l107:;	  G->state = state107;
   }
-  l106:;	
-  yyprintf((stderr, "  ok   %s @ %s\n", "definition", G->buf+G->pos));
+  l108:;	
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "definition", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l104:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "definition", G->buf+G->pos));
+  l106:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "definition", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy_declaration(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "declaration"));  if (!yymatchString(G, "%{")) goto l107;  yyText(G, G->begin, G->end);  if (!(YY_BEGIN)) goto l107;
-  l108:;	
-  {  int yypos109= G->pos, yythunkpos109= G->thunkpos;
-  {  int yypos110= G->pos, yythunkpos110= G->thunkpos;  if (!yymatchString(G, "%}")) goto l110;  goto l109;
-  l110:;	  G->pos= yypos110; G->thunkpos= yythunkpos110;
-  }  if (!yymatchDot(G)) goto l109;  goto l108;
-  l109:;	  G->pos= yypos109; G->thunkpos= yythunkpos109;
-  }  yyText(G, G->begin, G->end);  if (!(YY_END)) goto l107;  if (!yy_RPERCENT(G)) { goto l107; }  yyDo(G, yy_1_declaration, G->begin, G->end);
-  yyprintf((stderr, "  ok   %s @ %s\n", "declaration", G->buf+G->pos));
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "declaration"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yymatchString(G, "%{")) goto l109;  yyText(G, textpos?textpos:G->state.textpos, G->end);  if (!(YY_BEGIN)) goto l109;
+  l110:;	
+  {  yystate state111= G->state;
+  const char* error2= 0; error2=error2;
+
+  {  const char* error3= 0; error3=error3;
+
+  {  yystate state112= G->state;
+  const char* error4= 0; error4=error4;
+  if (!yymatchString(G, "%}")) goto l112;  goto l111;
+  l112:;	  G->state = state112;
+  }  if (!yymatchDot(G)) goto l111;
+  }  if (G->error.msg) goto l111;  goto l110;
+  l111:;	  G->state = state111;
+  }  yyText(G, textpos?textpos:G->state.textpos, G->end);  if (!(YY_END)) goto l109;  if (!yy_RPERCENT(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l109; }  yyDo(G, yy_1_declaration, textpos?textpos:G->state.textpos, G->end);
+  }
+  yyprintf((stderr, "  ok   %s @ %s\n", "declaration", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l107:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "declaration", G->buf+G->pos));
+  l109:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "declaration", G->buf+G->state.pos));
   return 0;
 }
 YY_RULE(int) yy__(GREG *G)
 {
-  yyprintf((stderr, "%s\n", "_"));
-  l112:;	
-  {  int yypos113= G->pos, yythunkpos113= G->thunkpos;
-  {  int yypos114= G->pos, yythunkpos114= G->thunkpos;  if (!yy_space(G)) { goto l115; }  goto l114;
-  l115:;	  G->pos= yypos114; G->thunkpos= yythunkpos114;  if (!yy_comment(G)) { goto l113; }
+  int textpos= 0; textpos=textpos;
+
+  yyprintf((stderr, "%s\n", "_"));  const char* error0= 0; error0=error0;
+
+  l114:;	
+  {  yystate state115= G->state;
+  const char* error1= 0; error1=error1;
+
+  {  yystate state116= G->state;
+  const char* error2= 0; error2=error2;
+  if (!yy_space(G)) { if (error2) { yyseterror(&G->error, &G->state, error2); return 0; } goto l117; }  goto l116;
+  l117:;	  if (G->error.msg) goto l116;  G->state = state116;  if (!yy_comment(G)) { if (error2) { yyseterror(&G->error, &G->state, error2); return 0; } goto l115; }
   }
-  l114:;	  goto l112;
-  l113:;	  G->pos= yypos113; G->thunkpos= yythunkpos113;
+  l116:;	  if (G->error.msg) goto l115;  goto l114;
+  l115:;	  G->state = state115;
   }
-  yyprintf((stderr, "  ok   %s @ %s\n", "_", G->buf+G->pos));
+  yyprintf((stderr, "  ok   %s @ %s\n", "_", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
 }
 YY_RULE(int) yy_grammar(GREG *G)
-{  int yypos0= G->pos, yythunkpos0= G->thunkpos;
-  yyprintf((stderr, "%s\n", "grammar"));  if (!yy__(G)) { goto l116; }
-  {  int yypos119= G->pos, yythunkpos119= G->thunkpos;  if (!yy_declaration(G)) { goto l120; }  goto l119;
-  l120:;	  G->pos= yypos119; G->thunkpos= yythunkpos119;  if (!yy_definition(G)) { goto l116; }
+{
+  int textpos= 0; textpos=textpos;
+  yystate state0= G->state;
+
+  yyprintf((stderr, "%s\n", "grammar"));  const char* error0= 0; error0=error0;
+
+  {  const char* error1= 0; error1=error1;
+  if (!yy__(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l118; }
+  {  const char* error2= 0; error2=error2;
+
+  {  yystate state121= G->state;
+  const char* error3= 0; error3=error3;
+  if (!yy_declaration(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l122; }  goto l121;
+  l122:;	  if (G->error.msg) goto l121;  G->state = state121;  if (!yy_definition(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l118; }
   }
-  l119:;	
-  l117:;	
-  {  int yypos118= G->pos, yythunkpos118= G->thunkpos;
-  {  int yypos121= G->pos, yythunkpos121= G->thunkpos;  if (!yy_declaration(G)) { goto l122; }  goto l121;
-  l122:;	  G->pos= yypos121; G->thunkpos= yythunkpos121;  if (!yy_definition(G)) { goto l118; }
+  l121:;	
+  l119:;	  yystate state120= G->state;
+
+  {  yystate state123= G->state;
+  const char* error3= 0; error3=error3;
+  if (!yy_declaration(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l124; }  goto l123;
+  l124:;	  if (G->error.msg) goto l123;  G->state = state123;  if (!yy_definition(G)) { if (error3) { yyseterror(&G->error, &G->state, error3); return 0; } goto l120; }
   }
-  l121:;	  goto l117;
-  l118:;	  G->pos= yypos118; G->thunkpos= yythunkpos118;
+  l123:;	  if (G->error.msg) goto l120;  goto l119;
+  l120:;	  G->state = state120;
+  }  error1 = "a rule, an inline c-block or the trailer or end of file";
+
+  {  yystate state125= G->state;
+  const char* error2= 0; error2=error2;
+  if (!yy_trailer(G)) { if (error2) { yyseterror(&G->error, &G->state, error2); return 0; } goto l125; }  goto l126;
+  l125:;	  G->state = state125;
   }
-  {  int yypos123= G->pos, yythunkpos123= G->thunkpos;  if (!yy_trailer(G)) { goto l123; }  goto l124;
-  l123:;	  G->pos= yypos123; G->thunkpos= yythunkpos123;
+  l126:;	  if (!yy_end_of_file(G)) { if (error1) { yyseterror(&G->error, &G->state, error1); return 0; } goto l118; }
   }
-  l124:;	  if (!yy_end_of_file(G)) { goto l116; }
-  yyprintf((stderr, "  ok   %s @ %s\n", "grammar", G->buf+G->pos));
+  yyprintf((stderr, "  ok   %s @ %s\n", "grammar", G->buf+G->state.pos));
+  if (G->error.msg) return 0;
+
+  if (textpos) G->state.textpos = textpos;
+
   return 1;
-  l116:;	  G->pos= yypos0; G->thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "grammar", G->buf+G->pos));
+  l118:;	  G->state = state0;
+  yyprintf((stderr, "  fail %s @ %s\n", "grammar", G->buf+G->state.pos));
   return 0;
 }
 
@@ -952,15 +1572,17 @@ YY_PARSE(int) YY_NAME(parse_from)(GREG *G, yyrule yystart)
       G->thunks= (yythunk*)YY_ALLOC(sizeof(yythunk) * G->thunkslen, G->data);
       G->valslen= YY_STACK_SIZE;
       G->vals= (YYSTYPE*)YY_ALLOC(sizeof(YYSTYPE) * G->valslen, G->data);
-      G->begin= G->end= G->pos= G->limit= G->thunkpos= 0;
+      G->limit = 0;
     }
-  G->pos = 0;
-  G->begin= G->end= G->pos;
-  G->thunkpos= 0;
+  memset(&G->state, 0, sizeof(G->state)); G->state.line= 1;
+  memset(&G->error, 0, sizeof(G->error));
+  G->end= 0;
   G->val= G->vals;
   yyok= yystart(G);
-  if (yyok) yyDone(G);
-  yyCommit(G);
+  if (yyok) {
+      yyDone(G);
+      yyCommit(G);
+  }
   return yyok;
   (void)yyrefill;
   (void)yymatchDot;
@@ -1009,27 +1631,30 @@ YY_PARSE(void) YY_NAME(parse_free)(GREG *G)
 #endif
 
 
-void yyerror(struct _GREG *G, char *message)
+void reporterror(struct _GREG *G)
 {
-  fprintf(stderr, "%s:%d: %s", fileName, lineNumber, message);
-  if (G->text[0]) fprintf(stderr, " near token '%s'", G->text);
-  if (G->pos < G->limit || !feof(input))
-    {
+  fprintf(stderr, "%s:%d: expected %s\n", fileName, G->error.line, G->error.msg);
+  if (G->error.pos < G->limit || !feof(input)) {
       G->buf[G->limit]= '\0';
-      fprintf(stderr, " before text \"");
-      while (G->pos < G->limit)
-	{
-	  if ('\n' == G->buf[G->pos] || '\r' == G->buf[G->pos]) break;
-	  fputc(G->buf[G->pos++], stderr);
-	}
-      if (G->pos == G->limit)
-	{
-	  int c;
-	  while (EOF != (c= fgetc(input)) && '\n' != c && '\r' != c)
-	    fputc(c, stderr);
-	}
+      fprintf(stderr, "  before \"");
+      while (G->error.pos < G->limit) {
+          if ('\n' == G->buf[G->error.pos]) {
+              fprintf(stderr, "\\n");
+              break;
+          }
+          if ('\r' == G->buf[G->error.pos]) {
+              fprintf(stderr, "\\r");
+              break;
+          }
+          fputc(G->buf[G->error.pos++], stderr);
+      }
+
+      if (G->error.pos == G->limit) {
+          int c;
+          while (EOF != (c= fgetc(input)) && '\n' != c && '\r' != c) fputc(c, stderr);
+      }
       fputc('\"', stderr);
-    }
+  }
   fprintf(stderr, "\n");
   exit(1);
 }
@@ -1080,31 +1705,31 @@ int main(int argc, char **argv)
   while (-1 != (c= getopt(argc, argv, "Vho:v")))
     {
       switch (c)
-	{
-	case 'V':
-	  version(basename(argv[0]));
-	  exit(0);
+    {
+    case 'V':
+      version(basename(argv[0]));
+      exit(0);
 
-	case 'h':
-	  usage(basename(argv[0]));
-	  break;
+    case 'h':
+      usage(basename(argv[0]));
+      break;
 
-	case 'o':
-	  if (!(output= fopen(optarg, "w")))
-	    {
-	      perror(optarg);
-	      exit(1);
-	    }
-	  break;
+    case 'o':
+      if (!(output= fopen(optarg, "w")))
+        {
+          perror(optarg);
+          exit(1);
+        }
+      break;
 
-	case 'v':
-	  verboseFlag= 1;
-	  break;
+    case 'v':
+      verboseFlag= 1;
+      break;
 
-	default:
-	  fprintf(stderr, "for usage try: %s -h\n", argv[0]);
-	  exit(1);
-	}
+    default:
+      fprintf(stderr, "for usage try: %s -h\n", argv[0]);
+      exit(1);
+    }
     }
   argc -= optind;
   argv += optind;
@@ -1113,31 +1738,31 @@ int main(int argc, char **argv)
   if (argc)
     {
       for (;  argc;  --argc, ++argv)
-	{
-	  if (!strcmp(*argv, "-"))
-	    {
-	      input= stdin;
-	      fileName= "<stdin>";
-	    }
-	  else
-	    {
-	      if (!(input= fopen(*argv, "r")))
-		{
-		  perror(*argv);
-		  exit(1);
-		}
-	      fileName= *argv;
-	    }
-	  lineNumber= 1;
-	  if (!yyparse(G))
-	    yyerror(G, "syntax error");
-	  if (input != stdin)
-	    fclose(input);
-	}
+    {
+      if (!strcmp(*argv, "-"))
+        {
+          input= stdin;
+          fileName= "<stdin>";
+        }
+      else
+        {
+          if (!(input= fopen(*argv, "r")))
+        {
+          perror(*argv);
+          exit(1);
+        }
+          fileName= *argv;
+        }
+      lineNumber= 1;
+      if (!yyparse(G))
+        reporterror(G);
+      if (input != stdin)
+        fclose(input);
+    }
     }
   else
     if (!yyparse(G))
-      yyerror(G, "syntax error");
+      reporterror(G);
   yyparse_free(G);
 
   if (verboseFlag)
