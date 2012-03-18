@@ -1,0 +1,8 @@
+start	= abcd+
+
+abcd	= 'a' { printf("A %d\n", G->pos); } bc { printf("ABC %d\n", G->pos); }
+	 | 'b' { printf("B %d\n", G->pos); } cd { printf("BCD %d\n", G->pos); }
+
+bc	= 'b' { printf("B %d\n", G->pos); } 'c' { printf("C %d\n", G->pos); }
+
+cd	= 'c' { printf("C %d\n", G->pos); } 'd' { printf("D %d\n", G->pos); }

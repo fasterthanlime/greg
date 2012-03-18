@@ -1,0 +1,17 @@
+%{
+#include <unistd.h>
+%}
+
+start =	"username"	{ printf("%s", getlogin()); }
+|	< . >		{ putchar(yytext[0]); }
+
+%%
+
+int main()
+{
+  GREG g;
+  yyinit(&g);
+  while (yyparse(&g));
+  yydeinit(&g);
+  return 0;
+}
