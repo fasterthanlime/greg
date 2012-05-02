@@ -20,7 +20,7 @@
 
 #define GREG_MAJOR      0
 #define GREG_MINOR      4
-#define GREG_LEVEL      3
+#define GREG_LEVEL      4
 
 enum { Unknown= 0, Rule, Variable, Name, Dot, Character, String, Class, Action, Predicate, Alternate, Sequence, PeekFor, PeekNot, Query, Star, Plus };
 
