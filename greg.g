@@ -15,7 +15,7 @@
 # 
 # THE SOFTWARE IS PROVIDED 'AS IS'.  USE ENTIRELY AT YOUR OWN RISK.
 # 
-# Last edited: 2007-09-13 08:12:17 by piumarta on emilia.local
+# Last edited: 2012-03-23 03:16:17 by piumarta on emilia
 
 %{
 # include "greg.h"
@@ -84,9 +84,9 @@ prefix=		AND action				{ push(makePredicate(yytext)); }
 |		    suffix
 
 suffix=		primary (QUESTION			{ push(makeQuery(pop())); }
-                        | STAR			        { push(makeStar (pop())); }
-			| PLUS			        { push(makePlus (pop())); }
-			)?
+			     | STAR			{ push(makeStar (pop())); }
+			     | PLUS			{ push(makePlus (pop())); }
+			   )?
 
 primary=	(
                 identifier				{ push(makeVariable(yytext)); }
@@ -112,7 +112,7 @@ class=		'[' < ( !']' range )* > ']' -
 
 range=		char '-' char | char
 
-char=		'\\' [abefnrtv'"\[\]\\]
+char=		'\\' [-abefnrtv'"\[\]\\]
 |		'\\' [0-3][0-7][0-7]
 |		'\\' [0-7][0-7]?
 |		!'\\' .
@@ -121,7 +121,7 @@ char=		'\\' [abefnrtv'"\[\]\\]
 errblock=       '~{' < braces* > '}' -
 action=		'{' < braces* > '}' -
 
-braces=		'{' (!'}' .)* '}'
+braces=		'{' braces* '}'
 |		!'}' .
 
 EQUAL=		'=' -
