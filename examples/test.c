@@ -1,7 +1,5 @@
 #include <stdio.h>
-#include <stdlib.h>
-
-#include "accept.leg.c"
+#include "test.peg.c"
 
 int main()
 {
@@ -9,6 +7,5 @@ int main()
   yyinit(&g);
   while (yyparse(&g));
   yydeinit(&g);
-
   return 0;
 }

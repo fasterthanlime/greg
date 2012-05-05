@@ -3,14 +3,11 @@
 
 int stack[1024];
 int stackp= -1;
-int var= 0;
-int vars[26];
 
 int push(int n)	{ return stack[++stackp]= n; }
 int pop(void)	{ return stack[stackp--]; }
-int top(void)	{ return stack[stackp]; }
 
-#include "dcv.leg.c"
+#include "dc.peg.c"
 
 int main()
 {
