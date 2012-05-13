@@ -16,7 +16,8 @@
  * Last edited: 2007-09-12 00:27:30 by piumarta on vps2.piumarta.com
  */
 
-#include "greg.h"
+#include "tree.h"
+#include "version.h"
 
 #include <stdio.h>
 #include <stdlib.h>

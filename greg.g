@@ -18,7 +18,8 @@
 # Last edited: 2012-03-23 03:16:17 by piumarta on emilia
 
 %{
-# include "greg.h"
+# include "tree.h"
+# include "version.h"
 
 # include <stdio.h>
 # include <stdlib.h>
