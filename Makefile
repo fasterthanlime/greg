@@ -30,7 +30,7 @@ uninstall : .FORCE
 
 rpeg.o : rpeg.c rpeg.peg-c
 
-%.rpeg-c : %.rpeg
+%.peg-c : %.peg
 	./rpeg -o $@ $<
 
 greg.o : greg.c
