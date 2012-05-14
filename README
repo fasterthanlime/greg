@@ -1,11 +1,15 @@
 greg is a re-entrant peg/leg, with some bug fixes.
+
+The original peg/leg 0.1.9 was released with re-entrant capabilities.
+
+And now most relevant features of greg (e.g., error handling) are
+being integrated into the original peg/leg software
 <http://piumarta.com/software/peg/>
 
-the most comprehensive example of greg usage is in
-nagaqueen, an ooc grammar, used in rock, an ooc
-compiler written in ooc.
+The most comprehensive example of greg usage is in nagaqueen, an ooc
+grammar, used in rock, an ooc compiler written in ooc.
 <http://github.com/nddrylliog/nagaqueen>
 <http://github.com/nddrylliog/rock>
 
-peg/leg is copyright (c) 2007 by Ian Piumarta
+peg/leg is copyright (c) 2007-2012 by Ian Piumarta
 released under an MIT license. as is greg.

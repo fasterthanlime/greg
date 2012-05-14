@@ -13,7 +13,7 @@
  * 
  * THE SOFTWARE IS PROVIDED 'AS IS'.  USE ENTIRELY AT YOUR OWN RISK.
  * 
- * Last edited: 2007-08-31 13:55:23 by piumarta on emilia.local
+ * Last edited: 2011-11-25 11:16:57 by piumarta on emilia
  */
 
 #include <stdio.h>
@@ -21,7 +21,8 @@
 #include <string.h>
 #include <assert.h>
 
-#include "greg.h"
+#include "version.h"
+#include "tree.h"
 
 static int yyl(void)
 {
@@ -34,28 +35,17 @@ static void charClassClear(unsigned char bits[], int c) { bits[c >> 3] &= ~(1 <<
 
 typedef void (*setter)(unsigned char bits[], int c);
 
-static int readChar(unsigned char **cp)
+static inline int oigit(int c)	{ return '0' <= c && c <= '7'; }
+
+static int cnext(unsigned char **ccp)
 {
-  unsigned char *cclass = *cp;
-  int c= *cclass++, i = 0;
+  unsigned char *cclass = *ccp;
+  int c= *cclass++;
+  if (c)
+  {
   if ('\\' == c && *cclass)
         {
-    c= *cclass++;
-    if (c >= '0' && c <= '9')
-      {
-        unsigned char oct= 0;
-        for (i= 2; i >= 0; i--) {
-          if (!(c >= '0' && c <= '9'))
-            break;
-          oct= (oct * 8) + (c - '0');
-          c= *cclass++;
-        }
-        cclass--;
-        c= oct;
-        goto done;
-      }
-
-    switch (c)
+    switch (c= *cclass++)
       {
       case 'a':  c= '\a'; break;        /* bel */
       case 'b':  c= '\b'; break;        /* bs */
@@ -65,12 +55,18 @@ static int readChar(unsigned char **cp)
       case 'r':  c= '\r'; break;        /* cr */
       case 't':  c= '\t'; break;        /* ht */
       case 'v':  c= '\v'; break;        /* vt */
-      default:          break;
+      default:
+        if (oigit(c))
+        {
+          c -= '0';
+          if (oigit(*cclass)) c= (c << 3) + *cclass++ - '0';
+          if (oigit(*cclass)) c= (c << 3) + *cclass++ - '0';
+        }
+        break;
       }
         }
-
-done:
-  *cp = cclass;
+  *ccp = cclass;
+  }
   return c;
 }
 
@@ -93,16 +89,19 @@ static char *makeCharClass(unsigned char *cclass)
       memset(bits, 0, 32);
       set= charClassSet;
     }
-  while (0 != (c= readChar(&cclass)))
+
+  while (*cclass)
     {
-      if ('-' == c && *cclass && prev >= 0)
+      if ('-' == *cclass && cclass[1] && prev >= 0)
         {
-          for (c= readChar(&cclass); prev <= c; ++prev)
+          ++cclass;
+          for (c= cnext(&cclass); prev <= c; ++prev)
             set(bits, prev);
           prev= -1;
         }
       else
   {
+    c= cnext(&cclass);
     set(bits, prev= c);
   }
     }
@@ -155,10 +154,18 @@ static void Node_compile_c_ko(Node *node, int ko)
     case String:
       {
         int len= strlen(node->string.value);
-        if (1 == len || (2 == len && '\\' == node->string.value[0]))
-          fprintf(output, "  if (!yymatchChar(G, '%s')) goto l%d;", node->string.value, ko);
+        if (1 == len)
+        {
+	      if ('\'' == node->string.value[0])
+	        fprintf(output, "  if (!yymatchChar(G, '\\'')) goto l%d;", ko);
+	      else
+	        fprintf(output, "  if (!yymatchChar(G, '%s')) goto l%d;", node->string.value, ko);
+        }
         else
-          fprintf(output, "  if (!yymatchString(G, \"%s\")) goto l%d;", node->string.value, ko);
+          if (2 == len && '\\' == node->string.value[0])
+            fprintf(output, "  if (!yymatchChar(G, '%s')) goto l%d;", node->string.value, ko);
+          else 
+            fprintf(output, "  if (!yymatchString(G, \"%s\")) goto l%d;", node->string.value, ko);
       }
       break;
 
