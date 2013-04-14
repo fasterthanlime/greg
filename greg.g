@@ -48,9 +48,9 @@
 
   void yyerror(struct _GREG *, char *message);
 
-# define YY_INPUT(buf, result, max, D)		\
-  {						\
-    int c= getc(input);				\
+# define YY_INPUT(buf, result, max, D)		    \
+  {						                        \
+    int c= getc(input);                         \
     if ('\n' == c || '\r' == c) ++lineNumber;	\
     result= (EOF == c) ? 0 : (*(buf)= c, 1);	\
   }
@@ -67,7 +67,7 @@ declaration=	'%{' < ( !'%}' . )* > RPERCENT		{ makeHeader(yytext); }						#{YYAC
 
 trailer=	'%%' < .* >				{ makeTrailer(yytext); }					#{YYACCEPT}
 
-definition=	identifier 				{ if (push(beginRule(findRule(yytext)))->rule.expression)
+definition=	s:identifier 				{ if (push(beginRule(findRule(yytext,1)))->rule.expression)
 							    fprintf(stderr, "rule '%s' redefined\n", yytext); }
 			EQUAL expression		{ Node *e= pop();  Rule_setExpression(pop(), e); }
 			SEMICOLON?											#{YYACCEPT}
@@ -90,8 +90,8 @@ suffix=		primary (QUESTION			{ push(makeQuery(pop())); }
 
 primary=	(
                 identifier				{ push(makeVariable(yytext)); }
-			COLON identifier !EQUAL		{ Node *name= makeName(findRule(yytext));  name->name.variable= pop();  push(name); }
-|		identifier !EQUAL			{ push(makeName(findRule(yytext))); }
+			COLON identifier !EQUAL		{ Node *name= makeName(findRule(yytext,0));  name->name.variable= pop();  push(name); }
+|		identifier !EQUAL			{ push(makeName(findRule(yytext,0))); }
 |		OPEN expression CLOSE
 |		literal					{ push(makeString(yytext)); }
 |		class					{ push(makeClass(yytext)); }
@@ -237,7 +237,7 @@ int main(int argc, char **argv)
 	  break;
 
 	case 'v':
-	  verboseFlag= 1;
+	  verboseFlag++;
 	  break;
 
 	default:
@@ -249,6 +249,13 @@ int main(int argc, char **argv)
   argv += optind;
 
   G = yyparse_new(NULL);
+#ifdef YY_DEBUG
+  if (verboseFlag > 0) {
+    G->debug = DEBUG_PARSE;
+    if (verboseFlag > 1)
+      G->debug = DEBUG_PARSE + DEBUG_VERBOSE;
+  }
+#endif
   if (argc)
     {
       for (;  argc;  --argc, ++argv)

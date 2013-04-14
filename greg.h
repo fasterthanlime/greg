@@ -20,7 +20,7 @@
 
 #define GREG_MAJOR      0
 #define GREG_MINOR      4
-#define GREG_LEVEL      3
+#define GREG_LEVEL      4
 
 enum { Unknown= 0, Rule, Variable, Name, Dot, Character, String, Class, Action, Predicate, Alternate, Sequence, PeekFor, PeekNot, Query, Star, Plus };
 
@@ -31,23 +31,25 @@ enum {
 
 typedef union Node Node;
 
-struct Rule      { int type;  Node *next;   char *errblock;  char *name;  Node *variables;  Node *expression;  int id;  int flags;       };
-struct Variable  { int type;  Node *next;   char *errblock;  char *name;  Node *value;  int offset;                                      };
-struct Name      { int type;  Node *next;   char *errblock;  Node *rule;  Node *variable;                                                };
-struct Dot       { int type;  Node *next;   char *errblock;                                                                              };
-struct Character { int type;  Node *next;   char *errblock;  char *value;                                                                };
-struct String    { int type;  Node *next;   char *errblock;  char *value;                                                                };
-struct Class     { int type;  Node *next;   char *errblock;  unsigned char *value;                                                       };
-struct Action    { int type;  Node *next;   char *errblock;  char *text;   Node *list;  char *name;  Node *rule;                         };
-struct Predicate { int type;  Node *next;   char *errblock;  char *text;                                                                 };
-struct Alternate { int type;  Node *next;   char *errblock;  Node *first;  Node *last;                                                   };
-struct Sequence  { int type;  Node *next;   char *errblock;  Node *first;  Node *last;                                                   };
-struct PeekFor   { int type;  Node *next;   char *errblock;  Node *element;                                                              };
-struct PeekNot   { int type;  Node *next;   char *errblock;  Node *element;                                                              };
-struct Query     { int type;  Node *next;   char *errblock;  Node *element;                                                              };
-struct Star      { int type;  Node *next;   char *errblock;  Node *element;                                                              };
-struct Plus      { int type;  Node *next;   char *errblock;  Node *element;                                                              };
-struct Any       { int type;  Node *next;   char *errblock;                                                                              };
+#define NODE_COMMON int type;  Node *next; char *errblock
+struct Rule	 { NODE_COMMON; char *name; Node *variables;  Node *expression;  int id;  int flags;	};
+struct Variable	 { NODE_COMMON; char *name; Node *value;  int offset;					};
+struct Name	 { NODE_COMMON; Node *rule; Node *variable;						};
+struct Dot	 { NODE_COMMON;										};
+struct Character { NODE_COMMON; char *value;								};
+struct String	 { NODE_COMMON; char *value;								};
+struct Class	 { NODE_COMMON; unsigned char *value;							};
+struct Action	 { NODE_COMMON; char *text;  Node *list;  char *name;  Node *rule;			};
+struct Predicate { NODE_COMMON; char *text;								};
+struct Alternate { NODE_COMMON; Node *first;  Node *last;						};
+struct Sequence	 { NODE_COMMON; Node *first;  Node *last;						};
+struct PeekFor	 { NODE_COMMON; Node *element;								};
+struct PeekNot	 { NODE_COMMON; Node *element;								};
+struct Query	 { NODE_COMMON; Node *element;								};
+struct Star	 { NODE_COMMON; Node *element;								};
+struct Plus	 { NODE_COMMON; Node *element;								};
+struct Any	 { NODE_COMMON;										};
+#undef NODE_COMMON
 
 union Node
 {
@@ -79,8 +81,8 @@ extern int   ruleCount;
 
 extern FILE *output;
 
-extern Node *makeRule(char *name);
-extern Node *findRule(char *name);
+extern Node *makeRule(char *name, int defined);
+extern Node *findRule(char *name, int defined);
 extern Node *beginRule(Node *rule);
 extern void  Rule_setExpression(Node *rule, Node *expression);
 extern Node *Rule_beToken(Node *rule);

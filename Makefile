@@ -25,6 +25,15 @@ uninstall : .FORCE
 
 greg.o : greg.c
 
+# bootstrap greg from greg.g
+greg.c : greg.g compile.c tree.c
+	test -f greg && ./greg -o greg-new.c greg.g
+	$(CC) $(CFLAGS) -o greg-new greg-new.c $(OBJS)
+	./greg-new -o greg-new.c greg.g
+	$(CC) $(CFLAGS) -o greg-new greg-new.c $(OBJS)
+	mv greg-new.c greg.c
+	mv greg-new greg
+
 grammar : .FORCE
 	./greg -o greg.c greg.g
 
@@ -40,10 +49,10 @@ samples/calc.c: samples/calc.leg greg
 samples/calc: samples/calc.c
 	$(CC) $(CFLAGS) -o $@ $<
 
-test: samples/calc greg-testing
+test: samples/calc run
 	echo '21 * 2 + 0' | ./samples/calc | grep 42
 
-run: greg.g greg
+run: greg
 	mkdir -p selftest
 	./greg -o testing1.c greg.g
 	$(CC) $(CFLAGS) -o selftest/testing1 testing1.c $(OBJS)
