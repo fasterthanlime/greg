@@ -39,14 +39,14 @@
   int   verboseFlag= 0;
 
   static int	 lineNumber= 0;
-  static char	*fileName= 0;
+  static const char	*fileName= 0;
   static char	*trailer= 0;
   static Header	*headers= 0;
 
   void makeHeader(char *text);
   void makeTrailer(char *text);
 
-  void yyerror(struct _GREG *, char *message);
+  void yyerror(struct _GREG *, const char *message);
 
 # define YY_INPUT(buf, result, max, D)		    \
   {						                        \
@@ -148,7 +148,7 @@ end-of-file=	!.
 
 %%
 
-void yyerror(struct _GREG *G, char *message)
+void yyerror(struct _GREG *G, const char *message)
 {
   fprintf(stderr, "%s:%d: %s", fileName, lineNumber, message);
   if (G->text[0]) fprintf(stderr, " near token '%s'", G->text);

@@ -36,7 +36,7 @@ int lastToken= -1;
 
 static inline Node *_newNode(int type, int size)
 {
-  Node *node= calloc(1, size);
+  Node *node= (Node*)calloc(1, size);
   node->type= type;
   ((struct Any *) node)->errblock= NULL;
   return node;
@@ -156,7 +156,7 @@ Node *makeAction(char *text)
   return node;
 }
 
-Node *makePredicate(char *text)
+Node *makePredicate(const char *text)
 {
   Node *node= newNode(Predicate);
   node->predicate.text= strdup(text);

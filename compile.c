@@ -421,14 +421,14 @@ static void yyprintcontext(FILE *stream, char *s)
 }
 #endif
 
-static char *header= "\
+static const char *header= "\
 #include <stdio.h>\n\
 #include <stdlib.h>\n\
 #include <string.h>\n\
 struct _GREG;\n\
 ";
 
-static char *preamble= "\
+static const char *preamble= "\
 #ifndef YY_ALLOC\n\
 #define YY_ALLOC(N, D) malloc(N)\n\
 #endif\n\
@@ -723,7 +723,7 @@ YY_LOCAL(void) yySet(GREG *G, char *text, int count, yythunk *thunk, YY_XTYPE YY
 \n\
 ";
 
-static char *footer= "\n\
+static const char *footer= "\n\
 \n\
 #ifndef YY_PART\n\
 \n\

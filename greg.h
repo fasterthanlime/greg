@@ -93,7 +93,7 @@ extern Node *makeCharacter(char *text);
 extern Node *makeString(char *text);
 extern Node *makeClass(char *text);
 extern Node *makeAction(char *text);
-extern Node *makePredicate(char *text);
+extern Node *makePredicate(const char *text);
 extern Node *makeAlternate(Node *e);
 extern Node *Alternate_append(Node *e, Node *f);
 extern Node *makeSequence(Node *e);
