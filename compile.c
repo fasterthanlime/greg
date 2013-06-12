@@ -219,7 +219,7 @@ static void Node_compile_c_ko(Node *node, int ko)
       break;
 
     case Class:
-      fprintf(output, "  if (!yymatchClass(G, (unsigned char *)\"%s\", \"%s\")) goto l%d;\n", makeCharClass(node->cclass.value), yyqq((char*)node->cclass.value), ko);
+      fprintf(output, "  if (!yymatchClass(G, (const unsigned char *)\"%s\", \"%s\")) goto l%d;\n", makeCharClass(node->cclass.value), yyqq((char*)node->cclass.value), ko);
       break;
 
     case Action:
@@ -610,7 +610,7 @@ YY_LOCAL(int) yymatchString(GREG *G, const char *s)\n\
   return 1;\n\
 }\n\
 \n\
-YY_LOCAL(int) yymatchClass(GREG *G, unsigned char *bits, char *cclass)\n\
+YY_LOCAL(int) yymatchClass(GREG *G, const unsigned char *bits, const char *cclass)\n\
 {\n\
   int c;\n\
   if (G->pos >= G->limit && !yyrefill(G)) return 0;\n\
