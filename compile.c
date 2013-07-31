@@ -80,9 +80,9 @@ static char *yyqq(char* s) {
   int sl = 0, dl = 0;
   while (*s++) {
     dl++; sl++;
-    if (*s==7||*s==8||*s==9||*s==11||*s==12||*s==13||*s==27||*s==34||*s=='%'||*s==92) { dl++; } // escape with '\'
-    else if (*s==10) { dl += 3; }        // \n\^J
-    else if (*(signed char*)s<32) { dl += 4; } // octal \000
+    if (*s==7||*s==8||*s==9||*s==11||*s==12||*s==13||*s==27||*s==34||*s=='%'||*s==92) { dl++; } /* escape with '\' */
+    else if (*s==10) { dl += 3; }        /* \n\^J */
+    else if (*(signed char*)s<32) { dl += 4; } /* octal \000 */
   }
   if (dl == sl) return d;
   s = d;
@@ -90,28 +90,28 @@ static char *yyqq(char* s) {
   while (*s) {
     if (*s == '"') {
       *d++ = '\\'; *d++ = *s++;
-    } else if (*s == '%') { // '%' in printf
+    } else if (*s == '%') { /* '%' in printf */
       *d++ = '%'; *d++ = *s++;
-    } else if (*s == '\n') { // \n\^J
+    } else if (*s == '\n') { /* \n\^J */
       *d++ = '\\'; *d++ = 'n'; *d++ = '\\'; *d++ = 10; s++;
-    } else if (*s == '\t') { //ht
+    } else if (*s == '\t') { /* ht */
       *d++ = '\\'; *d++ = 't'; s++;
-    } else if (*s == '\r') { //cr
+    } else if (*s == '\r') { /*cr */
       *d++ = '\\'; *d++ = 'r'; s++;
-    } else if (*s == '\a') { //bel
+    } else if (*s == '\a') { /*bel*/
       *d++ = '\\'; *d++ = 'a'; s++;
-    } else if (*s == '\b') { //bs
+    } else if (*s == '\b') { /*bs*/
       *d++ = '\\'; *d++ = 'b'; s++;
-    } else if (*s == '\e') { //esc
+    } else if (*s == '\e') { /*esc*/
       *d++ = '\\'; *d++ = 'e'; s++;
-    } else if (*s == '\f') { //ff
+    } else if (*s == '\f') { /*ff*/
       *d++ = '\\'; *d++ = 'f'; s++;
-    } else if (*s == '\v') { //vt
+    } else if (*s == '\v') { /*vt*/
       *d++ = '\\'; *d++ = 'v'; s++;
-    } else if (*s == 92) { // '\'
+    } else if (*s == 92) { /* '\' */
       *d++ = '\\'; *d++ = *s++;
     } else if (*(signed char*)s<32) {
-      sprintf(d,"\\%03o", *s); // octal \000
+      sprintf(d,"\\%03o", *s); /* octal \000 */
       d += 4; s++;
     } else {
       *d++ = *s++;
@@ -511,7 +511,7 @@ static const char *preamble= "\
 #define yydata G->data\n\
 #define yy G->ss\n\
 \n\
-struct _yythunk; // forward declaration\n\
+struct _yythunk; /* forward declaration */\n\
 typedef void (*yyaction)(struct _GREG *G, char *yytext, int yyleng, struct _yythunk *thunkpos, YY_XTYPE YY_XVAR);\n\
 typedef struct _yythunk { int begin, end;  yyaction  action; const char *name; struct _yythunk *next; } yythunk;\n\
 \n\

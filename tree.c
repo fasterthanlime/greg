@@ -34,7 +34,16 @@ int actionCount= 0;
 int ruleCount= 0;
 int lastToken= -1;
 
-static inline Node *_newNode(int type, int size)
+#ifndef STATIC_INLINE
+# if defined(__GNUC__) || defined(__cplusplus) || (defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L))
+/* #   define STATIC_INLINE static inline */
+#   define STATIC_INLINE static
+# else
+#   define STATIC_INLINE static
+# endif
+#endif /* STATIC_INLINE */
+
+STATIC_INLINE Node *_newNode(int type, int size)
 {
   Node *node= (Node*)calloc(1, size);
   node->type= type;
