@@ -108,7 +108,7 @@ statement = 'print'- expr-list
 |           'save'- s:string				{ save(s.string); }
 |           'load'- s:string				{ load(s.string); }
 |           'type'- s:string				{ type(s.string); }
-|           'dir'-					{ system("ls *.bas"); }
+|           'dir'-					{ int rc = system("ls *.bas"); }
 |           'help'-					{ fprintf(stderr, "%s", help); }
 
 expr-list = ( e:string					{ printf("%s", e.string); }
@@ -336,7 +336,7 @@ void type(char *name)
 int input(void)
 {
   char line[32];
-  fgets(line, sizeof(line), stdin);
+  char *rc = fgets(line, sizeof(line), stdin);
   return atoi(line);
 }
 

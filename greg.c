@@ -1423,6 +1423,20 @@ void yyerror(struct _GREG *G, const char *message)
     {
       G->buf[G->limit]= '\0';
       fprintf(stderr, " before text \"");
+      int pos_line = 1;
+      while ( (G->pos < G->limit) && (pos_line < lineNumber) )
+	{
+		switch(G->buf[G->pos++]) {
+			case '\n':
+				if(G->buf[G->pos] == '\r') { ++G->pos;}
+				++pos_line;
+			break;
+			case '\r':
+				if(G->buf[G->pos] == '\n') { ++G->pos;}
+				++pos_line;
+			break;
+		}
+	}
       while (G->pos < G->limit)
 	{
 	  if ('\n' == G->buf[G->pos] || '\r' == G->buf[G->pos]) break;
