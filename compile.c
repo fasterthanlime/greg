@@ -59,7 +59,7 @@ static int readChar(unsigned char **cp)
       {
       case 'a':  c= '\a'; break;        /* bel */
       case 'b':  c= '\b'; break;        /* bs */
-      case 'e':  c= '\e'; break;        /* esc */
+      case 'e':  c= '\033'; break;        /* esc */
       case 'f':  c= '\f'; break;        /* ff */
       case 'n':  c= '\n'; break;        /* nl */
       case 'r':  c= '\r'; break;        /* cr */
@@ -102,7 +102,7 @@ static char *yyqq(char* s) {
       *d++ = '\\'; *d++ = 'a'; s++;
     } else if (*s == '\b') { /*bs*/
       *d++ = '\\'; *d++ = 'b'; s++;
-    } else if (*s == '\e') { /*esc*/
+    } else if (*s == '\033') { /*esc*/
       *d++ = '\\'; *d++ = 'e'; s++;
     } else if (*s == '\f') { /*ff*/
       *d++ = '\\'; *d++ = 'f'; s++;

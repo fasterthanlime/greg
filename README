@@ -9,3 +9,5 @@ compiler written in ooc.
 
 peg/leg is copyright (c) 2007 by Ian Piumarta
 released under an MIT license. as is greg.
+
+To build with MSVC you need a getopt implementation such as <https://github.com/kainjow/wingetopt>
