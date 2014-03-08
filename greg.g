@@ -146,9 +146,11 @@ BEGIN=		'<' -
 END=		'>' -
 RPERCENT=	'%}' -
 
--=		(space | comment)*
+-=		(space | single-line-comment | quoted-comment)*
 space=		' ' | '\t' | end-of-line
-comment=	'#' (!end-of-line .)* end-of-line
+single-line-comment= ('#' | '//') till-end-of-line
+quoted-comment= "/*" (!"*/" .)* "*/"
+till-end-of-line=	(!end-of-line .)* end-of-line
 end-of-line=	'\r\n' | '\n' | '\r'
 end-of-file=	!.
 
@@ -156,26 +158,26 @@ end-of-file=	!.
 
 void yyerror(struct _GREG *G, const char *message)
 {
-  fprintf(stderr, "%s:%d: %s", fileName, lineNumber, message);
+  int error_line = 1;
+  while ( (G->pos < G->limit) && (error_line < lineNumber) )
+  {
+	switch(G->buf[G->pos++]) {
+		case '\n':
+			if(G->buf[G->pos] == '\r') { ++G->pos;}
+			++error_line;
+		break;
+		case '\r':
+			if(G->buf[G->pos] == '\n') { ++G->pos;}
+			++error_line;
+		break;
+	}
+  }
+  fprintf(stderr, "%s:%d:%d %s", fileName, lineNumber, G->limit - G->pos, message);
   if (G->text[0]) fprintf(stderr, " near token '%s'", G->text);
   if (G->pos < G->limit || !feof(input))
     {
       G->buf[G->limit]= '\0';
       fprintf(stderr, " before text \"");
-      int pos_line = 1;
-      while ( (G->pos < G->limit) && (pos_line < lineNumber) )
-	{
-		switch(G->buf[G->pos++]) {
-			case '\n':
-				if(G->buf[G->pos] == '\r') { ++G->pos;}
-				++pos_line;
-			break;
-			case '\r':
-				if(G->buf[G->pos] == '\n') { ++G->pos;}
-				++pos_line;
-			break;
-		}
-	}
       while (G->pos < G->limit)
 	{
 	  if ('\n' == G->buf[G->pos] || '\r' == G->buf[G->pos]) break;
