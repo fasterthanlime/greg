@@ -327,7 +327,7 @@ YY_LOCAL(int) yyAccept(GREG *G, int tp0)
 }
 
 YY_LOCAL(void) yyPush(GREG *G, char *text, int count, yythunk *thunk, YY_XTYPE YY_XVAR)	{
-  size_t off = (G->val - G->vals) + count;
+  int off = (G->val - G->vals) + count;
   if (off > G->valslen) {
     while (G->valslen < off + 1)
       G->valslen *= 2;

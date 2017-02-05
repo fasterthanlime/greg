@@ -23,6 +23,7 @@
 #define strdup _strdup
 #define setmode _setmode
 #define fileno _fileno
+#pragma warning(disable: 4996) // The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name
 #endif
 
 #define GREG_MAJOR      0
