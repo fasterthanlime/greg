@@ -34,6 +34,7 @@ enum { Unknown= 0, Rule, Variable, Name, Dot, Character, String, Class, Action, 
 enum {
   RuleUsed      = 1<<0,
   RuleReached   = 1<<1,
+  IgnoreCase    = 1<<0
 };
 
 typedef union Node Node;
@@ -44,8 +45,8 @@ struct Variable	 { NODE_COMMON; char *name; Node *value;  int offset;					};
 struct Name	 { NODE_COMMON; Node *rule; Node *variable;						};
 struct Dot	 { NODE_COMMON;										};
 struct Character { NODE_COMMON; char *value;								};
-struct String	 { NODE_COMMON; char *value;								};
-struct Class	 { NODE_COMMON; unsigned char *value;							};
+struct String	 { NODE_COMMON; char *value; int flags;							};
+struct Class	 { NODE_COMMON; unsigned char *value; int flags;					};
 struct Action	 { NODE_COMMON; char *text;  Node *list;  char *name;  Node *rule;			};
 struct Predicate { NODE_COMMON; char *text;								};
 struct Alternate { NODE_COMMON; Node *first;  Node *last;						};
@@ -92,13 +93,12 @@ extern Node *makeRule(char *name, int defined);
 extern Node *findRule(char *name, int defined);
 extern Node *beginRule(Node *rule);
 extern void  Rule_setExpression(Node *rule, Node *expression);
-extern Node *Rule_beToken(Node *rule);
 extern Node *makeVariable(char *name);
 extern Node *makeName(Node *rule);
 extern Node *makeDot(void);
 extern Node *makeCharacter(char *text);
-extern Node *makeString(char *text);
-extern Node *makeClass(char *text);
+extern Node *makeString(char *text, int nocase);
+extern Node *makeClass(char *text, int nocase);
 extern Node *makeAction(char *text);
 extern Node *makePredicate(const char *text);
 extern Node *makeAlternate(Node *e);

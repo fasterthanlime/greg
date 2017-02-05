@@ -29,6 +29,8 @@ static int yyl(void)
   return ++prev;
 }
 
+static int toLowerCase(int c) { return c >= 'A' && c <= 'Z' ? c |  0x20 : c; }
+static int toUpperCase(int c) { return c >= 'a' && c <= 'z' ? c & ~0x20 : c; }
 static void charClassSet  (unsigned char bits[], int c) { bits[c >> 3] |=  (1 << (c & 7)); }
 static void charClassClear(unsigned char bits[], int c) { bits[c >> 3] &= ~(1 << (c & 7)); }
 
@@ -52,6 +54,20 @@ static int readChar(unsigned char **cp)
         }
         cclass--;
         c= oct;
+        goto done;
+      }
+    else if (c == 'x')
+      {
+        unsigned char hex = 0;
+        c = toUpperCase(*cclass++);
+        for (i = 1; i >= 0; i--) {
+            if (!(c >= '0' && c <= '9') && !(c >= 'A' && c <= 'F'))
+                break;
+            hex = (hex * 16) + (c - (c < 'A' ? '0' : 'A' - 10));
+            c = toUpperCase(*cclass++);
+        }
+        cclass--;
+        c = hex;
         goto done;
       }
 
@@ -121,7 +137,7 @@ static char *yyqq(char* s) {
   return dst;
 }
 
-static char *makeCharClass(unsigned char *cclass)
+static char *makeCharClass(unsigned char *cclass, int flags)
 {
   unsigned char  bits[32];
   setter         set;
@@ -145,13 +161,28 @@ static char *makeCharClass(unsigned char *cclass)
       if ('-' == c && *cclass && prev >= 0)
         {
           for (c= readChar(&cclass); prev <= c; ++prev)
-            set(bits, prev);
+            {
+              if (IgnoreCase & flags)
+                {
+                  set(bits, toLowerCase(prev));
+                  set(bits, toUpperCase(prev));
+                }
+              else
+                set(bits, prev);
+            }
           prev= -1;
         }
       else
-  {
-    set(bits, prev= c);
-  }
+        {
+          prev = c;
+          if (IgnoreCase & flags)
+            {
+              set(bits, toLowerCase(prev));
+              set(bits, toUpperCase(prev));
+            }
+          else
+            set(bits, prev);
+        }
     }
 
   ptr= string;
@@ -203,7 +234,11 @@ static void Node_compile_c_ko(Node *node, int ko)
     case String:
       {
 	int len= strlen(node->string.value);
-	if (1 == len)
+	if (IgnoreCase & node->string.flags)
+	  {
+	    fprintf(output, "  if (!yymatchNoCaseString(G, \"%s\")) goto l%d;\n", node->string.value, ko);
+	  }
+	else if (1 == len)
 	  {
 	    if ('\'' == node->string.value[0])
 	      fprintf(output, "  if (!yymatchChar(G, '\\'')) goto l%d;\n", ko);
@@ -219,7 +254,7 @@ static void Node_compile_c_ko(Node *node, int ko)
       break;
 
     case Class:
-      fprintf(output, "  if (!yymatchClass(G, (const unsigned char *)\"%s\", \"%s\")) goto l%d;\n", makeCharClass(node->cclass.value), yyqq((char*)node->cclass.value), ko);
+      fprintf(output, "  if (!yymatchClass(G, (const unsigned char *)\"%s\", \"%s\")) goto l%d;\n", makeCharClass(node->cclass.value, node->cclass.flags), yyqq((char*)node->cclass.value), ko);
       break;
 
     case Action:
@@ -608,6 +643,25 @@ YY_LOCAL(int) yymatchString(GREG *G, const char *s)\n\
       ++G->pos;\n\
     }\n\
   return 1;\n\
+}\n\
+\n\
+YY_LOCAL(int) yymatchNoCaseString(GREG *G, const char *s)\n\
+{\n\
+  #define YY_TOUPPER(ch) ((ch) >= 'a' && (ch) <= 'z' ? (ch) & 0xffdf : (ch))\n\
+  int yysav= G->pos;\n\
+  while (*s)\n\
+    {\n\
+      if (G->pos >= G->limit && !yyrefill(G)) return 0;\n\
+      if (YY_TOUPPER(G->buf[G->pos]) != YY_TOUPPER(*s))\n\
+        {\n\
+          G->pos= yysav;\n\
+          return 0;\n\
+        }\n\
+      ++s;\n\
+      ++G->pos;\n\
+    }\n\
+  return 1;\n\
+  #undef YY_TOUPPER\n\
 }\n\
 \n\
 YY_LOCAL(int) yymatchClass(GREG *G, const unsigned char *bits, const char *cclass)\n\

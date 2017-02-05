@@ -99,8 +99,10 @@ primary=	(
 			COLON identifier !EQUAL		{ Node *name= makeName(findRule(yytext,0));  name->name.variable= pop();  push(name); }
 |		identifier !EQUAL			{ push(makeName(findRule(yytext,0))); }
 |		OPEN expression CLOSE
-|		literal					{ push(makeString(yytext)); }
-|		class					{ push(makeClass(yytext)); }
+|		literali				{ push(makeString(yytext,1)); }
+|		literal					{ push(makeString(yytext,0)); }
+|		classi					{ push(makeClass(yytext,1)); }
+|		class					{ push(makeClass(yytext,0)); }
 |		DOT					{ push(makeDot()); }
 |		action					{ push(makeAction(yytext)); }
 |		BEGIN					{ push(makePredicate("YY_BEGIN")); }
@@ -111,14 +113,20 @@ primary=	(
 
 identifier=	< [-a-zA-Z_][-a-zA-Z_0-9]* > -
 
-literal=	['] < ( !['] char )* > ['] -
-|		["] < ( !["] char )* > ["] -
+literali=	literal-core 'i' -
+literal=	literal-core -
+literal-core=	['] < ( !['] char )* > [']
+|		["] < ( !["] char )* > ["]
 
-class=		'[' < ( !']' range )* > ']' -
+classi=		class-core 'i' -
+class=		class-core -
+class-core=	'[' < ( !']' range )* > ']'
 
 range=		char '-' char | char
 
 char=		'\\' [abefnrtv'"\[\]\\]
+|		'\\' 'x'[0-9A-Fa-f][0-9A-Fa-f]
+|		'\\' 'x'[0-9A-Fa-f]
 |		'\\' [0-3][0-7][0-7]
 |		'\\' [0-7][0-7]?
 |		!'\\' .

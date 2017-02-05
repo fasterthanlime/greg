@@ -131,17 +131,19 @@ Node *makeCharacter(char *text)
   return node;
 }
 
-Node *makeString(char *text)
+Node *makeString(char *text, int nocase)
 {
   Node *node= newNode(String);
   node->string.value= strdup(text);
+  node->string.flags = nocase ? IgnoreCase : 0;
   return node;
 }
 
-Node *makeClass(char *text)
+Node *makeClass(char *text, int nocase)
 {
   Node *node= newNode(Class);
   node->cclass.value= (unsigned char *)strdup(text);
+  node->cclass.flags = nocase ? IgnoreCase : 0;
   return node;
 }
 
@@ -310,8 +312,10 @@ static void Node_fprint(FILE *stream, Node *node)
     case Name:		fprintf(stream, " %s", node->name.rule->rule.name);			break;
     case Dot:		fprintf(stream, " .");							break;
     case Character:	fprintf(stream, " '%s'", node->character.value);			break;
-    case String:	fprintf(stream, " \"%s\"", node->string.value);				break;
-    case Class:		fprintf(stream, " [%s]", node->cclass.value);				break;
+    case String:	fprintf(stream, " \"%s\"%s", node->string.value, 
+                                (IgnoreCase & node->string.flags) ? "i" : "");                  break;
+    case Class:		fprintf(stream, " [%s]%s", node->cclass.value,
+                                (IgnoreCase & node->string.flags) ? "i" : "");			break;
     case Action:	fprintf(stream, " { %s }", node->action.text);				break;
     case Predicate:	fprintf(stream, " ?{ %s }", node->action.text);				break;
 

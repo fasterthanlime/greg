@@ -1,0 +1,7 @@
+Debug
+Release
+*.iobj
+*.ipdb
+*.opendb
+*.db
+test
