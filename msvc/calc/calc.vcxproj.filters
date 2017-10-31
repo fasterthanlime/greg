@@ -18,9 +18,4 @@
     <None Include="..\..\samples\calc.leg" />
     <None Include="..\..\samples\calc.ref" />
   </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="..\..\samples\calc.leg.c">
-      <Filter>Fichiers sources</Filter>
-    </ClCompile>
-  </ItemGroup>
 </Project>
